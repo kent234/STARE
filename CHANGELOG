@@ -1,2 +1,17 @@
-v0.0001:
-added changelog;
+# Changelog
+
+## [v.0001 WIP]
+
+### Added
+- Go-модуль `stare/server`
+- `scanner/crtsh.go` — сбор поддоменов через crt.sh
+  - Валидация домена, таймаут, лимит ответа (8 MiB)
+  - Проверка `Content-Type`
+  - Нормализация: split по `\n`, снятие wildcard, дедупликация, сортировка
+- `scanner/temp_test.go` — интеграционный тест
+- `go.mod`
+
+### Known Limitations
+- crt.sh нестабилен (502, HTML вместо JSON)
+- Wildcard-сертификаты скрывают поддомены
+- Нужна комбинация источников: passive DNS + перебор словарей
