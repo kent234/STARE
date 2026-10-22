@@ -86,3 +86,46 @@ func TestBruteSubdomains_RealDNS(t *testing.T) {
 		t.Logf("  - %s", s)
 	}
 }
+
+func TestScanPorts_RealHost(t *testing.T) {
+	client := NewPortsClient()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	ports, err := client.ScanPorts(ctx, "159.93.168.194") // uni-dubna.ru
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("scan failed: %v", err)
+	}
+
+	t.Logf("open ports in %v: %v", elapsed, ports)
+}
+
+func TestScanPorts_InvalidIP(t *testing.T) {
+	client := NewPortsClient()
+
+	_, err := client.ScanPorts(context.Background(), "not an ip")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestScanPortsMany_RealHosts(t *testing.T) {
+	client := NewPortsClient()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	ips := []string{"159.93.168.194", "1.1.1.1"}
+	result, err := client.ScanPortsMany(ctx, ips)
+	if err != nil {
+		t.Fatalf("scan many failed: %v", err)
+	}
+
+	for ip, ports := range result {
+		t.Logf("%s: %v", ip, ports)
+	}
+}
