@@ -1,0 +1,144 @@
+.main-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+  gap: 32px;
+  z-index: 1;
+}
+
+/* Заголовок панели */
+.main-screen__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 900px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+/* Название панели */
+.main-screen__title {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  color: var(--text-bright);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  text-shadow: 0 0 10px var(--hacker-green-glow);
+}
+
+/* Кнопка "Назад" в заголовке */
+.main-screen__back-button
+
+/* Основной контент панели */
+.main-screen__content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 900px;
+  gap: 24px;
+}
+
+/* Секция внутри панели */
+.main-screen__section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Заголовок секции */
+.main-screen__section-title {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--hacker-green);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+/* Ряд с элементами */
+.main-screen__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+/* Группа чекбоксов */
+.main-screen__checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Отдельный чекбокс с лейблом */
+.main-screen__checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+/* Стилизованный чекбокс */
+.main-screen__checkbox {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;/
+}
+
+/* Состояние чекбокса при наведении */
+.main-screen__checkbox:hover {
+  border-color: var(--hacker-green);
+  box-shadow: 0 0 8px var(--hacker-green-glow);
+}
+
+/* Состояние отмеченного чекбокса */
+.main-screen__checkbox:checked {
+  background: var(--hacker-green);
+  border-color: var(--hacker-green);
+}
+
+/* Галочка внутри отмеченного чекбокса */
+.main-screen__checkbox:checked::after {
+  content: 'X';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--bg-dark);
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* Текст лейбла чекбокса */
+.main-screen__checkbox-label {
+  font-size: 14px;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+}
+
+/* Адаптивность для маленьких экранов */
+@media (max-width: 768px) {
+  .main-screen {
+    padding: 20px 16px;
+    gap: 24px;
+  }
+
+  .main-screen__title {
+    font-size: 20px;
+  }
+
+  .main-screen__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

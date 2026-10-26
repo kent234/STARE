@@ -1,0 +1,68 @@
+.start-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+  gap: 24px;
+  z-index: 1;
+}
+
+/* карточка для земли */
+.start-screen__earth-wrapper {
+  width: 100%;
+  max-width: 650px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* карточка для описания */
+.start-screen__description-wrapper {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  justify-content: center;
+}
+
+/* текст описания */
+.start-screen__description {
+  font-size: 16px;                 /* размер шрифта */
+  color: var(--text-main);
+  line-height: 1.7;                /* межстрочный интервал */
+  text-align: center;
+  font-family: var(--font-main);
+}
+
+/* выделенный текст в описании */
+.start-screen__description strong {
+  color: var(--hacker-green);
+  font-family: var(--font-mono);
+  text-shadow: 0 0 6px var(--hacker-green-glow);
+}
+
+/* карточка для кнопки "Начать" */
+.start-screen__button-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* телефончики, плафончики, тапки, яблоки, трубки,кирпичи, самусуге */
+@media (max-width: 768px) {
+  .start-screen {
+    padding: 20px 16px;
+    gap: 16px;
+  }
+
+  .start-screen__earth-wrapper {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .start-screen__description {
+    font-size: 14px;
+  }
+}

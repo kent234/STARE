@@ -1,0 +1,19 @@
+.ascii-earth-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  width: 100%;
+}
+
+.ascii-earth {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--hacker-green);
+  text-shadow: 0 0 8px var(--hacker-green-glow);
+  white-space: pre;
+  margin: 0;
+  user-select: none;
+  overflow: hidden;
+}

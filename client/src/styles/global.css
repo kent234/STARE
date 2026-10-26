@@ -1,0 +1,59 @@
+@import './variables.css';
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Стили для всего тела страницы */
+body {
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: var(--font-main);
+  font-size: 16px;                   /* размер шрифта */
+  line-height: 1.6;                  /* межстрочный интервал */
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* ссылки */
+a {
+  color: var(--hacker-green);
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+a:hover {
+  color: var(--text-bright);
+  text-shadow: 0 0 8px var(--hacker-green-glow);
+}
+
+/* Заголовки */
+h1, h2, h3 {
+  font-family: var(--font-mono);
+  color: var(--text-bright);
+  letter-spacing: 1px;
+}
+
+ul, ol {
+  list-style: none;
+}
+
+/* Скроллбар */
+::-webkit-scrollbar {
+  width: 8px;               /* ширина вертикальной полосы прокрутки */
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-darker);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--hacker-green-dim);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hacker-green);
+}
