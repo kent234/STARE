@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net"
+	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"stare/server/scanner"
@@ -19,165 +21,341 @@ const (
 	ModDNS
 	ModWordlist
 	ModPorts
+	ModWhois
+	ModFingerprint
+	ModDeepScan
 )
 
-type ScanResult struct {
-	Target     string
-	Subdomains []string
-	IPs        []string
-	Ports      map[string][]int
-	Errors     []string
-	Duration   time.Duration
+type SubdomainReport struct {
+	IPs       []string `json:"ips,omitempty"`
+	Ports     []int    `json:"ports,omitempty"`
+	Server    string   `json:"server,omitempty"`
+	RobotsTxt []string `json:"robots_txt,omitempty"`
 }
 
-func fakeLogs(ctx context.Context, target string) {
-	logs := []string{
-		"Initializing S.T.A.R.E engine v0.1...",
-		"Loading target modules...",
-		fmt.Sprintf("Target acquired: %s", target),
-		"Bypassing local firewall restrictions...",
-		"Establishing secure tunnel...",
-		"Querying Certificate Transparency logs...",
-		"Resolving DNS A/AAAA records...",
-		"Brute-forcing subdomains via built-in wordlist...",
-		"Probing TCP ports [stealth mode]...",
-		"Analyzing responses...",
-		"Compiling intelligence report...",
-	}
-
-	for _, l := range logs {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(time.Duration(200+rand.Intn(300)) * time.Millisecond):
-			LogHack(l)
-		}
-	}
+type ScanResult struct {
+	Target           string                      `json:"target"`
+	Timestamp        string                      `json:"timestamp"`
+	Subdomains       []string                    `json:"subdomains"`
+	IPs              []string                    `json:"ips"`
+	Ports            map[string][]int            `json:"ports"`
+	DNS              scanner.ExtendedDNS         `json:"dns"`
+	Whois            map[string]string           `json:"whois"`
+	Artifacts        scanner.Artifacts           `json:"artifacts"`
+	ASN              map[string]string           `json:"asn"`
+	SubdomainDetails map[string]*SubdomainReport `json:"subdomain_details,omitempty"`
+	Errors           []string                    `json:"errors"`
+	DurationMs       int64                       `json:"duration_ms"`
 }
 
 func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
-	result := &ScanResult{Target: target, Ports: map[string][]int{}}
+	result := &ScanResult{
+		Target:           target,
+		Timestamp:        time.Now().Format(time.RFC3339),
+		Ports:            map[string][]int{},
+		ASN:              map[string]string{},
+		SubdomainDetails: make(map[string]*SubdomainReport),
+	}
 	start := time.Now()
+
+	// Применяем Public Suffix List
+	if root, err := scanner.ExtractRootDomain(target); err == nil {
+		result.Target = root
+		target = root
+	}
 
 	isIP := net.ParseIP(target) != nil
 	dns := scanner.NewDNSClient()
 
+	var runCerts, runWordlist, runPorts, runDNS, runWhois, runFingerprint, runDeep bool
 	for _, m := range mods {
 		switch m {
 		case ModCerts:
-			if isIP {
-				continue
-			}
-			sp := NewSpinner("Hunting for SSL certificates...")
-			subs, err := scanner.NewCRTShClient().FetchSubdomains(ctx, target)
-			sp.Stop()
-			if err != nil {
-				LogError("crt.sh: " + err.Error())
-			} else {
-				result.Subdomains = append(result.Subdomains, subs...)
-				LogSuccess(fmt.Sprintf("Found %d subdomains via crt.sh", len(subs)))
-			}
-		case ModDNS:
-			if isIP {
-				result.IPs = append(result.IPs, target)
-				LogSuccess("Target is IP: " + target)
-				continue
-			}
-			sp := NewSpinner("Resolving target IPs...")
-			ips, err := dns.Resolve(ctx, target)
-			sp.Stop()
-			if err != nil {
-				LogError("DNS: " + err.Error())
-			} else {
-				result.IPs = append(result.IPs, ips...)
-				LogSuccess(fmt.Sprintf("Resolved %d IP(s)", len(ips)))
-			}
+			runCerts = true
 		case ModWordlist:
-			if isIP {
-				continue
-			}
-			sp := NewSpinner("Brute-forcing subdomains...")
-			subs, err := scanner.NewWordlistClient(dns).BruteSubdomains(ctx, target)
-			sp.Stop()
-			if err != nil {
-				LogError("Wordlist: " + err.Error())
-			} else {
-				result.Subdomains = append(result.Subdomains, subs...)
-				LogSuccess(fmt.Sprintf("Found %d subdomains via wordlist", len(subs)))
-			}
+			runWordlist = true
 		case ModPorts:
-			ips := result.IPs
-			if !isIP && len(ips) == 0 {
-				resolved, _ := dns.Resolve(ctx, target)
-				ips = resolved
-				result.IPs = append(result.IPs, resolved...)
-			}
-			if len(ips) > 0 {
-				sp := NewSpinner(fmt.Sprintf("Scanning ports on %d host(s)...", len(ips)))
-				ports, err := scanner.NewPortsClient().ScanPortsMany(ctx, ips)
-				sp.Stop()
-				if err != nil {
-					LogError("Ports: " + err.Error())
-				} else {
-					result.Ports = ports
-					total := 0
-					for _, p := range ports {
-						total += len(p)
-					}
-					LogSuccess(fmt.Sprintf("Found %d open ports", total))
-				}
-			}
+			runPorts = true
+		case ModDNS:
+			runDNS = true
+		case ModWhois:
+			runWhois = true
+		case ModFingerprint:
+			runFingerprint = true
+		case ModDeepScan:
+			runDeep = true
 		}
 	}
 
-	result.Duration = time.Since(start)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	addSubdomains := func(subs []string) {
+		mu.Lock()
+		defer mu.Unlock()
+		result.Subdomains = append(result.Subdomains, subs...)
+	}
+
+	// 1. Сбор поддоменов
+	if !isIP {
+		isRF := strings.HasSuffix(target, ".xn--p1ai")
+
+		if runCerts {
+			LogInfo("Starting passive subdomain enumeration...")
+			if isRF {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					LogInfo("Querying TLSCC (RU)...")
+					subs, err := scanner.FetchTLSCC(ctx, target)
+					if err != nil {
+						LogWarn("TLSCC: " + err.Error())
+						mu.Lock()
+						result.Errors = append(result.Errors, "TLSCC: "+err.Error())
+						mu.Unlock()
+					} else {
+						addSubdomains(subs)
+						LogSuccess(fmt.Sprintf("TLSCC: +%d subdomains", len(subs)))
+					}
+				}()
+			} else {
+				sources := []struct {
+					Name string
+					Fn   func(context.Context, string) ([]string, error)
+				}{
+					{"crt.sh", func(c context.Context, d string) ([]string, error) {
+						return scanner.NewCRTShClient().FetchSubdomains(c, d)
+					}},
+					{"crt.name", scanner.FetchCRTName},
+					{"RapidDNS", scanner.FetchRapidDNS},
+					{"TLSCC", scanner.FetchTLSCC},
+					{"HackerTarget", scanner.FetchHackerTarget},
+					{"AlienVault OTX", scanner.FetchAlienVaultOTX},
+					{"AnubisDB", scanner.FetchAnubisDB},
+					{"ThreatMiner", scanner.FetchThreatMiner},
+					{"URLScan.io", scanner.FetchURLScan},
+				}
+
+				for _, src := range sources {
+					wg.Add(1)
+					go func(name string, fn func(context.Context, string) ([]string, error)) {
+						defer wg.Done()
+						LogInfo(fmt.Sprintf("Querying %s...", name))
+						subs, err := fn(ctx, target)
+						if err != nil {
+							LogWarn(name + ": " + err.Error())
+						} else {
+							addSubdomains(subs)
+							LogSuccess(fmt.Sprintf("%s: +%d subdomains", name, len(subs)))
+						}
+					}(src.Name, src.Fn)
+				}
+			}
+		}
+
+		if runWordlist {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				LogInfo("Starting wordlist brute-force...")
+				wl := scanner.NewWordlistClient(dns)
+				subs, err := wl.BruteSubdomains(ctx, target)
+				if err != nil {
+					LogWarn("Wordlist: " + err.Error())
+				} else {
+					addSubdomains(subs)
+					LogSuccess(fmt.Sprintf("Wordlist: +%d subdomains", len(subs)))
+				}
+			}()
+		}
+		wg.Wait()
+		mu.Lock()
+		result.Subdomains = uniqueSorted(result.Subdomains)
+		LogInfo(fmt.Sprintf("Total unique subdomains found: %d", len(result.Subdomains)))
+		mu.Unlock()
+	}
+
+	// 2. WHOIS и DNS
+	if runWhois && !isIP {
+		LogInfo("Fetching WHOIS/RDAP data...")
+		whoisData, err := scanner.FetchWhoisUniversal(ctx, target)
+		if err == nil {
+			result.Whois = whoisData
+			LogSuccess("WHOIS/RDAP data retrieved")
+		} else {
+			LogWarn("WHOIS: " + err.Error())
+		}
+	}
+
+	if runDNS && !isIP {
+		LogInfo("Fetching extended DNS records (MX, TXT, NS)...")
+		result.DNS = dns.ResolveExtended(ctx, target)
+		LogSuccess("DNS records retrieved")
+	}
+
+	// 3. Резолвинг IP
+	if isIP {
+		result.IPs = append(result.IPs, target)
+	} else {
+		LogInfo("Resolving IPs for base domain and subdomains...")
+		resolved, _ := dns.Resolve(ctx, target)
+		ips := append(result.IPs, resolved...)
+
+		mu.Lock()
+		subsCopy := make([]string, len(result.Subdomains))
+		copy(subsCopy, result.Subdomains)
+		mu.Unlock()
+
+		for _, sub := range subsCopy {
+			if subIPs, err := dns.Resolve(ctx, sub); err == nil {
+				ips = append(ips, subIPs...)
+			}
+		}
+		result.IPs = uniqueSorted(ips)
+		LogSuccess(fmt.Sprintf("Resolved %d unique IP addresses", len(result.IPs)))
+	}
+
+	// 4. ASN
+	if len(result.IPs) > 0 {
+		LogInfo("Fetching ASN information...")
+		for _, ip := range result.IPs {
+			asn, _ := scanner.GetASN(ctx, ip)
+			result.ASN[ip] = asn
+		}
+		LogSuccess("ASN data retrieved")
+	}
+
+	// 5. Порты
+	if runPorts && len(result.IPs) > 0 {
+		sp := NewSpinner(fmt.Sprintf("Scanning ports on %d hosts...", len(result.IPs)))
+		ports, _ := scanner.NewPortsClient().ScanPortsMany(ctx, result.IPs)
+		sp.Stop()
+		result.Ports = ports
+
+		totalPorts := 0
+		for _, p := range ports {
+			totalPorts += len(p)
+		}
+		LogSuccess(fmt.Sprintf("Found %d open ports", totalPorts))
+	}
+
+	// 6. Артефакты
+	if runFingerprint && !isIP {
+		LogInfo("Fingerprinting main domain (robots.txt, headers)...")
+		result.Artifacts = scanner.CheckArtifacts(ctx, target)
+		LogSuccess("Fingerprinting complete")
+	}
+
+	// 7. Deep Scan
+	if runDeep && !isIP && len(result.Subdomains) > 0 {
+		sp := NewSpinner(fmt.Sprintf("Deep scanning %d subdomains...", len(result.Subdomains)))
+		var wgDeep sync.WaitGroup
+		var muDeep sync.Mutex
+		sem := make(chan struct{}, 5)
+
+		for _, sub := range result.Subdomains {
+			wgDeep.Add(1)
+			go func(subdomain string) {
+				defer wgDeep.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				report := &SubdomainReport{}
+				subIPs, err := dns.Resolve(ctx, subdomain)
+				if err != nil {
+					return
+				}
+				report.IPs = subIPs
+
+				portsClient := scanner.NewPortsClient()
+				openPorts, _ := portsClient.ScanPortsMany(ctx, subIPs)
+				for _, ports := range openPorts {
+					report.Ports = append(report.Ports, ports...)
+				}
+				report.Ports = uniqueInts(report.Ports)
+
+				arts := scanner.CheckArtifacts(ctx, subdomain)
+				report.Server = arts.ServerHdr
+				report.RobotsTxt = arts.RobotsTxt
+
+				if len(report.IPs) > 0 || len(report.Ports) > 0 || report.Server != "" {
+					muDeep.Lock()
+					result.SubdomainDetails[subdomain] = report
+					muDeep.Unlock()
+				}
+			}(sub)
+		}
+		wgDeep.Wait()
+		sp.Stop()
+		LogSuccess(fmt.Sprintf("Deep Scan complete: analyzed %d responsive subdomains", len(result.SubdomainDetails)))
+	}
+
+	result.DurationMs = time.Since(start).Milliseconds()
 	return result
 }
 
-func printResults(r *ScanResult) {
-	r.Subdomains = uniqueSorted(r.Subdomains)
-	r.IPs = uniqueSorted(r.IPs)
+func saveReport(r *ScanResult) {
+	safeName := strings.ReplaceAll(r.Target, ".", "_")
+	fileName := fmt.Sprintf("stare_report_%s_%s.json", safeName, time.Now().Format("20060102_150405"))
 
+	file, err := os.Create(fileName)
+	if err != nil {
+		LogError("Failed to create report: " + err.Error())
+		return
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(r)
+
+	LogSuccess(fmt.Sprintf("Report saved: %s", colorize(fileName, brightCyan)))
+}
+
+func printResults(r *ScanResult) {
 	BoxedText("INTELLIGENCE REPORT: " + r.Target)
 
 	if len(r.Subdomains) > 0 {
-		fmt.Println(colorize("  [+] SUBDOMAINS FOUND:", brightWhite))
-		for _, s := range r.Subdomains {
+		fmt.Println(colorize(fmt.Sprintf("  [+] SUBDOMAINS (%d):", len(r.Subdomains)), brightWhite))
+		for _, s := range r.Subdomains[:min(10, len(r.Subdomains))] {
 			fmt.Println(colorize("      ├── ", dim) + s)
+		}
+		if len(r.Subdomains) > 10 {
+			fmt.Println(colorize("      └── ... and more", dim))
 		}
 	}
 
 	if len(r.IPs) > 0 {
-		fmt.Println()
-		fmt.Println(colorize("  [+] IP ADDRESSES:", brightWhite))
-		for _, ip := range r.IPs {
-			fmt.Println(colorize("      ├── ", dim) + ip)
+		fmt.Println(colorize("\n  [+] TOP IPs:", brightWhite))
+		for _, ip := range r.IPs[:min(5, len(r.IPs))] {
+			fmt.Printf("      ├── %s [%s]\n", ip, r.ASN[ip])
 		}
 	}
 
 	if len(r.Ports) > 0 {
-		fmt.Println()
-		fmt.Println(colorize("  [+] OPEN PORTS (TCP):", brightWhite))
+		fmt.Println(colorize("\n  [+] OPEN PORTS:", brightWhite))
 		for h, p := range r.Ports {
-			for _, port := range p {
-				state := colorize("OPEN", brightGreen)
-				if isRisky(port) {
-					state = colorize("OPEN [RISKY]", blink+brightRed)
-				}
-				fmt.Printf("      ├── %s:%d  →  %s\n", h, port, state)
+			if len(p) > 0 {
+				fmt.Printf("      ├── %s → %v\n", h, p)
 			}
 		}
 	}
 
-	if len(r.Errors) > 0 {
-		fmt.Println()
-		for _, e := range r.Errors {
-			LogError(e)
+	if len(r.SubdomainDetails) > 0 {
+		fmt.Println(colorize("\n  [+] DEEP SCAN RESULTS:", brightWhite))
+		for sub, detail := range r.SubdomainDetails {
+			fmt.Printf("      ├── %s\n", colorize(sub, brightGreen))
+			if detail.Server != "" {
+				fmt.Printf("      │   ├── Server: %s\n", detail.Server)
+			}
+			if len(detail.Ports) > 0 {
+				fmt.Printf("      │   ├── Ports: %v\n", detail.Ports)
+			}
 		}
 	}
 
 	fmt.Println()
-	fmt.Println(colorize(fmt.Sprintf("  [ Execution time: %s ]", r.Duration.Round(time.Millisecond)), dim))
+	fmt.Println(colorize(fmt.Sprintf("  [ Execution time: %s ]", time.Duration(r.DurationMs)*time.Millisecond), dim))
 }
 
 func uniqueSorted(in []string) []string {
@@ -196,7 +374,22 @@ func uniqueSorted(in []string) []string {
 	return out
 }
 
-func isRisky(port int) bool {
-	risky := map[int]bool{22: true, 3306: true, 3389: true, 6379: true}
-	return risky[port]
+func uniqueInts(in []int) []int {
+	seen := map[int]struct{}{}
+	for _, n := range in {
+		seen[n] = struct{}{}
+	}
+	out := make([]int, 0, len(seen))
+	for n := range seen {
+		out = append(out, n)
+	}
+	sort.Ints(out)
+	return out
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
