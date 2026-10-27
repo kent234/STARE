@@ -41,5 +41,6 @@ func CheckArtifacts(ctx context.Context, domain string) Artifacts {
 		resp.Body.Close()
 		res.FaviconMD5 = fmt.Sprintf("%x", md5.Sum(body))
 	}
+
 	return res
 }

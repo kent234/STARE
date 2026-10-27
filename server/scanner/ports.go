@@ -40,8 +40,8 @@ type PortsClient struct {
 func NewPortsClient() *PortsClient {
 	return &PortsClient{
 		ports:   defaultPorts,
-		timeout: 2 * time.Second,
-		workers: 20,
+		timeout: 1 * time.Second,
+		workers: 40,
 	}
 }
 
