@@ -116,19 +116,62 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 	// 1. Сбор поддоменов (если выбраны модули)
 	if !isIP {
 		if runCerts {
+			// crt.sh
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				subs, _ := scanner.FetchCRTName(ctx, target)
-				addSubdomains(subs)
-				if len(subs) > 0 {
+				sp := NewSpinner("Hunting via crt.sh...")
+				subs, err := scanner.NewCRTShClient().FetchSubdomains(ctx, target)
+				sp.Stop()
+				if err != nil {
+					LogError("crt.sh: " + err.Error())
+				} else {
+					addSubdomains(subs)
+					LogSuccess(fmt.Sprintf("crt.sh: +%d subs", len(subs)))
+				}
+			}()
+
+			// crt.name
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sp := NewSpinner("Hunting via crt.name...")
+				subs, err := scanner.FetchCRTName(ctx, target)
+				sp.Stop()
+				if err != nil {
+					LogError("crt.name: " + err.Error())
+				} else {
+					addSubdomains(subs)
 					LogSuccess(fmt.Sprintf("crt.name: +%d subs", len(subs)))
 				}
+			}()
 
-				subs2, _ := scanner.FetchRapidDNS(ctx, target)
-				addSubdomains(subs2)
-				if len(subs2) > 0 {
-					LogSuccess(fmt.Sprintf("RapidDNS: +%d subs", len(subs2)))
+			// RapidDNS
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sp := NewSpinner("Hunting via RapidDNS...")
+				subs, err := scanner.FetchRapidDNS(ctx, target)
+				sp.Stop()
+				if err != nil {
+					LogError("RapidDNS: " + err.Error())
+				} else {
+					addSubdomains(subs)
+					LogSuccess(fmt.Sprintf("RapidDNS: +%d subs", len(subs)))
+				}
+			}()
+			// TLSCC (Российский CT-лог)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sp := NewSpinner("Hunting via TLSCC (RU)...")
+				subs, err := scanner.FetchTLSCC(ctx, target)
+				sp.Stop()
+				if err != nil {
+					LogWarn("TLSCC: " + err.Error()) // Желтое предупреждение, а не красная ошибка
+				} else {
+					addSubdomains(subs)
+					LogSuccess(fmt.Sprintf("TLSCC: +%d subs", len(subs)))
 				}
 			}()
 		}
