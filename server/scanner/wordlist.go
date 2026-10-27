@@ -34,7 +34,7 @@ func NewWordlistClient(dns *DNSClient) *WordlistClient {
 		dns:     dns,
 		words:   words,
 		timeout: 2 * time.Second,
-		workers: 20,
+		workers: 40,
 	}
 }
 

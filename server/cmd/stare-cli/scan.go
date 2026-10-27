@@ -24,6 +24,7 @@ const (
 	ModWhois
 	ModFingerprint
 	ModDeepScan
+	ModNuclei
 )
 
 type SubdomainReport struct {
@@ -42,6 +43,8 @@ type ScanResult struct {
 	DNS              scanner.ExtendedDNS         `json:"dns"`
 	Whois            map[string]string           `json:"whois"`
 	Artifacts        scanner.Artifacts           `json:"artifacts"`
+	Technologies     []string                    `json:"technologies"`
+	Vulnerabilities  []scanner.NucleiFinding     `json:"vulnerabilities"`
 	ASN              map[string]string           `json:"asn"`
 	SubdomainDetails map[string]*SubdomainReport `json:"subdomain_details,omitempty"`
 	Errors           []string                    `json:"errors"`
@@ -55,10 +58,11 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		Ports:            map[string][]int{},
 		ASN:              map[string]string{},
 		SubdomainDetails: make(map[string]*SubdomainReport),
+		Technologies:     []string{},
+		Vulnerabilities:  []scanner.NucleiFinding{},
 	}
 	start := time.Now()
 
-	// Применяем Public Suffix List
 	if root, err := scanner.ExtractRootDomain(target); err == nil {
 		result.Target = root
 		target = root
@@ -67,7 +71,7 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 	isIP := net.ParseIP(target) != nil
 	dns := scanner.NewDNSClient()
 
-	var runCerts, runWordlist, runPorts, runDNS, runWhois, runFingerprint, runDeep bool
+	var runCerts, runWordlist, runPorts, runDNS, runWhois, runFingerprint, runDeep, runNuclei bool
 	for _, m := range mods {
 		switch m {
 		case ModCerts:
@@ -84,6 +88,8 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 			runFingerprint = true
 		case ModDeepScan:
 			runDeep = true
+		case ModNuclei:
+			runNuclei = true
 		}
 	}
 
@@ -110,9 +116,6 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 					subs, err := scanner.FetchTLSCC(ctx, target)
 					if err != nil {
 						LogWarn("TLSCC: " + err.Error())
-						mu.Lock()
-						result.Errors = append(result.Errors, "TLSCC: "+err.Error())
-						mu.Unlock()
 					} else {
 						addSubdomains(subs)
 						LogSuccess(fmt.Sprintf("TLSCC: +%d subdomains", len(subs)))
@@ -239,11 +242,14 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		LogSuccess(fmt.Sprintf("Found %d open ports", totalPorts))
 	}
 
-	// 6. Артефакты
+	// 6. Артефакты и Фингерпринт (Wappalyzer)
 	if runFingerprint && !isIP {
-		LogInfo("Fingerprinting main domain (robots.txt, headers)...")
-		result.Artifacts = scanner.CheckArtifacts(ctx, target)
-		LogSuccess("Fingerprinting complete")
+		sp := NewSpinner("Fingerprinting technologies (Wappalyzer)...")
+		arts, techs := scanner.AnalyzeArtifacts(ctx, target)
+		sp.Stop()
+		result.Artifacts = arts
+		result.Technologies = techs
+		LogSuccess(fmt.Sprintf("Technologies detected: %v", techs))
 	}
 
 	// 7. Deep Scan
@@ -251,7 +257,7 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		sp := NewSpinner(fmt.Sprintf("Deep scanning %d subdomains...", len(result.Subdomains)))
 		var wgDeep sync.WaitGroup
 		var muDeep sync.Mutex
-		sem := make(chan struct{}, 5)
+		sem := make(chan struct{}, 15) // Увеличили для скорости
 
 		for _, sub := range result.Subdomains {
 			wgDeep.Add(1)
@@ -288,6 +294,19 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		wgDeep.Wait()
 		sp.Stop()
 		LogSuccess(fmt.Sprintf("Deep Scan complete: analyzed %d responsive subdomains", len(result.SubdomainDetails)))
+	}
+
+	// 8. Nuclei (Уязвимости)
+	if runNuclei && !isIP {
+		sp := NewSpinner("Running Nuclei vulnerability scanner (this may take a while)...")
+		findings, err := scanner.RunNuclei(ctx, target)
+		sp.Stop()
+		if err != nil {
+			LogWarn("Nuclei: " + err.Error())
+		} else {
+			result.Vulnerabilities = findings
+			LogSuccess(fmt.Sprintf("Nuclei: Found %d vulnerabilities", len(findings)))
+		}
 	}
 
 	result.DurationMs = time.Since(start).Milliseconds()
@@ -338,6 +357,18 @@ func printResults(r *ScanResult) {
 			if len(p) > 0 {
 				fmt.Printf("      ├── %s → %v\n", h, p)
 			}
+		}
+	}
+
+	if len(r.Technologies) > 0 {
+		fmt.Println(colorize("\n  [+] TECHNOLOGIES (Wappalyzer):", brightWhite))
+		fmt.Printf("      ├── %s\n", strings.Join(r.Technologies, ", "))
+	}
+
+	if len(r.Vulnerabilities) > 0 {
+		fmt.Println(colorize("\n  [!] VULNERABILITIES (Nuclei):", brightRed))
+		for _, v := range r.Vulnerabilities {
+			fmt.Printf("      ├── [%s] %s (%s)\n", strings.ToUpper(v.Severity), v.Name, v.MatchedAt)
 		}
 	}
 
