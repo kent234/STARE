@@ -45,7 +45,6 @@ func exitAltScreen() {
 }
 
 func clearScreen() {
-	// Очищает экран и историю скролла
 	fmt.Print("\033[H\033[2J\033[3J")
 }
 
@@ -60,7 +59,6 @@ func Typewriter(text string, speed time.Duration) {
 	fmt.Println()
 }
 
-// MatrixRain — запускает матричный дождь на N секунд
 func MatrixRain(duration time.Duration) {
 	width, height := 80, 20
 	chars := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()_+-=[]{}|;':\",./<>?")
@@ -133,7 +131,7 @@ func PrintHelp() {
 	fmt.Println(colorize("  ║                      S.T.A.R.E GUIDE                       ║", brightWhite))
 	fmt.Println(colorize("  ╠════════════════════════════════════════════════════════════╣", brightCyan))
 	fmt.Println(colorize("  ║ ", brightCyan) + "1. Введи домен (example.com) или IP (8.8.8.8)             " + colorize(" ║", brightCyan))
-	fmt.Println(colorize("  ║ ", brightCyan) + "2. Выбери модули цифрами через запятую (например: 1,3,4)   " + colorize(" ║", brightCyan))
+	fmt.Println(colorize("  ║ ", brightCyan) + "2. Выбери модули цифрами через запятую (например: 1,3,5)   " + colorize(" ║", brightCyan))
 	fmt.Println(colorize("  ║ ", brightCyan) + "   или напиши 'all', чтобы запустить полный спектр.        " + colorize(" ║", brightCyan))
 	fmt.Println(colorize("  ║ ", brightCyan) + "3. Нажми Enter и жди отчет.                               " + colorize(" ║", brightCyan))
 	fmt.Println(colorize("  ║ ", brightCyan) + "4. Для выхода введи 'exit' или 'quit' вместо цели.         " + colorize(" ║", brightCyan))
