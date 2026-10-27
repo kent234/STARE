@@ -1,3 +1,13 @@
+github.com/TwiN/whois v1.3.0 h1:V2+IUh5OGim8F3axTOMSlVmxNRaBrgpyiv5U0Dvbt5I=
+github.com/TwiN/whois v1.3.0/go.mod h1:TjipCMpJRAJYKmtz/rXQBU6UGxMh6bk8SHazu7OMnQE=
+github.com/jarcoal/httpmock v1.4.2 h1:dKwiP/9zITCPfBLsDn3kchbSOu16JrnxtVEmL0fPRcI=
+github.com/jarcoal/httpmock v1.4.2/go.mod h1:ftW1xULwo+j0R0JJkJIIi7UKigZUXCLLanykgjwBXL0=
+github.com/mitchellh/go-homedir v1.1.0 h1:lukF9ziXFxDFPkA1vsr5zpc1XuPDn/wFntq5mG+4E0Y=
+github.com/mitchellh/go-homedir v1.1.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
+github.com/openrdap/rdap v0.10.2 h1:dAP3rvrn9uInV6eBg1c6LNoEeWAKkgdqm09MRgKDpWo=
+github.com/openrdap/rdap v0.10.2/go.mod h1:3XWb3R5cdN59jD6MlxzwmAQw1MMio2QDH7+pwpgb5jY=
+github.com/weppos/publicsuffix-go v0.50.3 h1:eT5dcjHQcVDNc0igpFEsGHKIip30feuB2zuuI9eJxiE=
+github.com/weppos/publicsuffix-go v0.50.3/go.mod h1:/rOa781xBykZhHK/I3QeHo92qdDKVmKZKF7s8qAEM/4=
 golang.org/x/net v0.61.0 h1:RR+6j/BTBCrggOLugxa+66R8FvoN6MHlzDlZIbN9YFw=
 golang.org/x/net v0.61.0/go.mod h1:WgDCOTH8iwtB66T4/GfI94AHo/hhdb7Hah9NDseQfiI=
 golang.org/x/text v0.43.0 h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=

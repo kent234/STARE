@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+var logMutex sync.Mutex
 var useColor = true
 
 const (
@@ -178,10 +179,26 @@ func BoxedText(title string) {
 	fmt.Println(colorize("  ╚"+line+"╝", brightCyan))
 }
 
-func LogInfo(msg string)    { fmt.Printf("  %s %s\n", colorize("[*]", brightCyan), msg) }
-func LogSuccess(msg string) { fmt.Printf("  %s %s\n", colorize("[+]", brightGreen), msg) }
-func LogWarn(msg string)    { fmt.Printf("  %s %s\n", colorize("[!]", brightYellow), msg) }
-func LogError(msg string)   { fmt.Printf("  %s %s\n", colorize("[-]", brightRed), msg) }
-func LogHack(msg string) {
-	fmt.Printf("  %s %s\n", colorize("[#]", brightWhite), colorize(msg, brightGreen))
+func LogInfo(msg string) {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	fmt.Printf("\r\033[K  %s %s\n", colorize("[*]", brightCyan), msg)
+}
+
+func LogSuccess(msg string) {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	fmt.Printf("\r\033[K  %s %s\n", colorize("[+]", brightGreen), msg)
+}
+
+func LogWarn(msg string) {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	fmt.Printf("\r\033[K  %s %s\n", colorize("[!]", brightYellow), msg)
+}
+
+func LogError(msg string) {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	fmt.Printf("\r\033[K  %s %s\n", colorize("[-]", brightRed), msg)
 }

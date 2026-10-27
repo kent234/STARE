@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"sort"
@@ -24,10 +23,9 @@ const (
 	ModPorts
 	ModWhois
 	ModFingerprint
-	ModDeepScan // Новый модуль
+	ModDeepScan
 )
 
-// Детальный отчет по каждому поддомену
 type SubdomainReport struct {
 	IPs       []string `json:"ips,omitempty"`
 	Ports     []int    `json:"ports,omitempty"`
@@ -45,30 +43,9 @@ type ScanResult struct {
 	Whois            map[string]string           `json:"whois"`
 	Artifacts        scanner.Artifacts           `json:"artifacts"`
 	ASN              map[string]string           `json:"asn"`
-	SubdomainDetails map[string]*SubdomainReport `json:"subdomain_details,omitempty"` // НОВОЕ
+	SubdomainDetails map[string]*SubdomainReport `json:"subdomain_details,omitempty"`
 	Errors           []string                    `json:"errors"`
 	DurationMs       int64                       `json:"duration_ms"`
-}
-
-func fakeLogs(ctx context.Context, target string) {
-	logs := []string{
-		"Initializing S.T.A.R.E engine v0.4...",
-		fmt.Sprintf("Target acquired: %s", target),
-		"Bypassing local firewall restrictions...",
-		"Querying Certificate Transparency logs...",
-		"Brute-forcing subdomains...",
-		"Resolving DNS records...",
-		"Probing TCP ports...",
-		"Compiling intelligence report...",
-	}
-	for _, l := range logs {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(time.Duration(200+rand.Intn(300)) * time.Millisecond):
-			LogHack(l)
-		}
-	}
 }
 
 func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
@@ -80,6 +57,12 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		SubdomainDetails: make(map[string]*SubdomainReport),
 	}
 	start := time.Now()
+
+	// Применяем Public Suffix List
+	if root, err := scanner.ExtractRootDomain(target); err == nil {
+		result.Target = root
+		target = root
+	}
 
 	isIP := net.ParseIP(target) != nil
 	dns := scanner.NewDNSClient()
@@ -113,157 +96,177 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		result.Subdomains = append(result.Subdomains, subs...)
 	}
 
-	// 1. Сбор поддоменов (если выбраны модули)
+	// 1. Сбор поддоменов
 	if !isIP {
+		isRF := strings.HasSuffix(target, ".xn--p1ai")
+
 		if runCerts {
-			// crt.sh
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sp := NewSpinner("Hunting via crt.sh...")
-				subs, err := scanner.NewCRTShClient().FetchSubdomains(ctx, target)
-				sp.Stop()
-				if err != nil {
-					LogError("crt.sh: " + err.Error())
-				} else {
-					addSubdomains(subs)
-					LogSuccess(fmt.Sprintf("crt.sh: +%d subs", len(subs)))
+			LogInfo("Starting passive subdomain enumeration...")
+			if isRF {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					LogInfo("Querying TLSCC (RU)...")
+					subs, err := scanner.FetchTLSCC(ctx, target)
+					if err != nil {
+						LogWarn("TLSCC: " + err.Error())
+						mu.Lock()
+						result.Errors = append(result.Errors, "TLSCC: "+err.Error())
+						mu.Unlock()
+					} else {
+						addSubdomains(subs)
+						LogSuccess(fmt.Sprintf("TLSCC: +%d subdomains", len(subs)))
+					}
+				}()
+			} else {
+				sources := []struct {
+					Name string
+					Fn   func(context.Context, string) ([]string, error)
+				}{
+					{"crt.sh", func(c context.Context, d string) ([]string, error) {
+						return scanner.NewCRTShClient().FetchSubdomains(c, d)
+					}},
+					{"crt.name", scanner.FetchCRTName},
+					{"RapidDNS", scanner.FetchRapidDNS},
+					{"TLSCC", scanner.FetchTLSCC},
+					{"HackerTarget", scanner.FetchHackerTarget},
+					{"AlienVault OTX", scanner.FetchAlienVaultOTX},
+					{"AnubisDB", scanner.FetchAnubisDB},
+					{"ThreatMiner", scanner.FetchThreatMiner},
+					{"URLScan.io", scanner.FetchURLScan},
 				}
-			}()
 
-			// crt.name
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sp := NewSpinner("Hunting via crt.name...")
-				subs, err := scanner.FetchCRTName(ctx, target)
-				sp.Stop()
-				if err != nil {
-					LogError("crt.name: " + err.Error())
-				} else {
-					addSubdomains(subs)
-					LogSuccess(fmt.Sprintf("crt.name: +%d subs", len(subs)))
+				for _, src := range sources {
+					wg.Add(1)
+					go func(name string, fn func(context.Context, string) ([]string, error)) {
+						defer wg.Done()
+						LogInfo(fmt.Sprintf("Querying %s...", name))
+						subs, err := fn(ctx, target)
+						if err != nil {
+							LogWarn(name + ": " + err.Error())
+						} else {
+							addSubdomains(subs)
+							LogSuccess(fmt.Sprintf("%s: +%d subdomains", name, len(subs)))
+						}
+					}(src.Name, src.Fn)
 				}
-			}()
-
-			// RapidDNS
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sp := NewSpinner("Hunting via RapidDNS...")
-				subs, err := scanner.FetchRapidDNS(ctx, target)
-				sp.Stop()
-				if err != nil {
-					LogError("RapidDNS: " + err.Error())
-				} else {
-					addSubdomains(subs)
-					LogSuccess(fmt.Sprintf("RapidDNS: +%d subs", len(subs)))
-				}
-			}()
-			// TLSCC (Российский CT-лог)
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sp := NewSpinner("Hunting via TLSCC (RU)...")
-				subs, err := scanner.FetchTLSCC(ctx, target)
-				sp.Stop()
-				if err != nil {
-					LogWarn("TLSCC: " + err.Error()) // Желтое предупреждение, а не красная ошибка
-				} else {
-					addSubdomains(subs)
-					LogSuccess(fmt.Sprintf("TLSCC: +%d subs", len(subs)))
-				}
-			}()
+			}
 		}
+
 		if runWordlist {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				LogInfo("Starting wordlist brute-force...")
 				wl := scanner.NewWordlistClient(dns)
-				subs, _ := wl.BruteSubdomains(ctx, target)
-				addSubdomains(subs)
-				LogSuccess(fmt.Sprintf("Wordlist: +%d subs", len(subs)))
+				subs, err := wl.BruteSubdomains(ctx, target)
+				if err != nil {
+					LogWarn("Wordlist: " + err.Error())
+				} else {
+					addSubdomains(subs)
+					LogSuccess(fmt.Sprintf("Wordlist: +%d subdomains", len(subs)))
+				}
 			}()
 		}
 		wg.Wait()
 		mu.Lock()
 		result.Subdomains = uniqueSorted(result.Subdomains)
+		LogInfo(fmt.Sprintf("Total unique subdomains found: %d", len(result.Subdomains)))
 		mu.Unlock()
 	}
 
-	// 2. DNS и WHOIS основного домена
+	// 2. WHOIS и DNS
 	if runWhois && !isIP {
-		whois, err := scanner.FetchWhois(ctx, target)
+		LogInfo("Fetching WHOIS/RDAP data...")
+		whoisData, err := scanner.FetchWhoisUniversal(ctx, target)
 		if err == nil {
-			result.Whois = whois
+			result.Whois = whoisData
+			LogSuccess("WHOIS/RDAP data retrieved")
+		} else {
+			LogWarn("WHOIS: " + err.Error())
 		}
 	}
+
 	if runDNS && !isIP {
+		LogInfo("Fetching extended DNS records (MX, TXT, NS)...")
 		result.DNS = dns.ResolveExtended(ctx, target)
+		LogSuccess("DNS records retrieved")
 	}
 
-	// 3. РЕЗОЛВИНГ IP основного домена и поддоменов
-	ips := result.IPs
+	// 3. Резолвинг IP
 	if isIP {
-		ips = append(ips, target)
+		result.IPs = append(result.IPs, target)
 	} else {
+		LogInfo("Resolving IPs for base domain and subdomains...")
 		resolved, _ := dns.Resolve(ctx, target)
-		ips = append(ips, resolved...)
+		ips := append(result.IPs, resolved...)
+
 		mu.Lock()
 		subsCopy := make([]string, len(result.Subdomains))
 		copy(subsCopy, result.Subdomains)
 		mu.Unlock()
+
 		for _, sub := range subsCopy {
 			if subIPs, err := dns.Resolve(ctx, sub); err == nil {
 				ips = append(ips, subIPs...)
 			}
 		}
-	}
-	result.IPs = uniqueSorted(ips)
-
-	// 4. ASN для всех IP
-	for _, ip := range result.IPs {
-		asn, _ := scanner.GetASN(ctx, ip)
-		result.ASN[ip] = asn
+		result.IPs = uniqueSorted(ips)
+		LogSuccess(fmt.Sprintf("Resolved %d unique IP addresses", len(result.IPs)))
 	}
 
-	// 5. СКАНИРОВАНИЕ ПОРТОВ (основные IP)
+	// 4. ASN
+	if len(result.IPs) > 0 {
+		LogInfo("Fetching ASN information...")
+		for _, ip := range result.IPs {
+			asn, _ := scanner.GetASN(ctx, ip)
+			result.ASN[ip] = asn
+		}
+		LogSuccess("ASN data retrieved")
+	}
+
+	// 5. Порты
 	if runPorts && len(result.IPs) > 0 {
+		sp := NewSpinner(fmt.Sprintf("Scanning ports on %d hosts...", len(result.IPs)))
 		ports, _ := scanner.NewPortsClient().ScanPortsMany(ctx, result.IPs)
+		sp.Stop()
 		result.Ports = ports
+
+		totalPorts := 0
+		for _, p := range ports {
+			totalPorts += len(p)
+		}
+		LogSuccess(fmt.Sprintf("Found %d open ports", totalPorts))
 	}
 
-	// 6. Артефакты основного домена
+	// 6. Артефакты
 	if runFingerprint && !isIP {
+		LogInfo("Fingerprinting main domain (robots.txt, headers)...")
 		result.Artifacts = scanner.CheckArtifacts(ctx, target)
+		LogSuccess("Fingerprinting complete")
 	}
 
-	// 7. РЕКУРСИВНЫЙ СКАН (Deep Scan) для поддоменов
+	// 7. Deep Scan
 	if runDeep && !isIP && len(result.Subdomains) > 0 {
 		sp := NewSpinner(fmt.Sprintf("Deep scanning %d subdomains...", len(result.Subdomains)))
-
 		var wgDeep sync.WaitGroup
 		var muDeep sync.Mutex
-		// Ограничиваем параллельность, чтобы не забанили
 		sem := make(chan struct{}, 5)
 
 		for _, sub := range result.Subdomains {
 			wgDeep.Add(1)
 			go func(subdomain string) {
 				defer wgDeep.Done()
-				sem <- struct{}{}        // Захватываем слот
-				defer func() { <-sem }() // Освобождаем слот
+				sem <- struct{}{}
+				defer func() { <-sem }()
 
 				report := &SubdomainReport{}
-
-				// Резолвим IP поддомена
 				subIPs, err := dns.Resolve(ctx, subdomain)
 				if err != nil {
 					return
 				}
 				report.IPs = subIPs
 
-				// Сканируем порты (только базовые 80, 443, 8080)
 				portsClient := scanner.NewPortsClient()
 				openPorts, _ := portsClient.ScanPortsMany(ctx, subIPs)
 				for _, ports := range openPorts {
@@ -271,12 +274,10 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 				}
 				report.Ports = uniqueInts(report.Ports)
 
-				// Снимаем заголовки и robots.txt
 				arts := scanner.CheckArtifacts(ctx, subdomain)
 				report.Server = arts.ServerHdr
 				report.RobotsTxt = arts.RobotsTxt
 
-				// Сохраняем, если есть хоть какая-то инфа
 				if len(report.IPs) > 0 || len(report.Ports) > 0 || report.Server != "" {
 					muDeep.Lock()
 					result.SubdomainDetails[subdomain] = report
@@ -286,7 +287,7 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		}
 		wgDeep.Wait()
 		sp.Stop()
-		LogSuccess(fmt.Sprintf("Deep scanned %d subdomains", len(result.SubdomainDetails)))
+		LogSuccess(fmt.Sprintf("Deep Scan complete: analyzed %d responsive subdomains", len(result.SubdomainDetails)))
 	}
 
 	result.DurationMs = time.Since(start).Milliseconds()
