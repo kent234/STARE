@@ -1,4 +1,4 @@
-```markdown
+
 <div align="center">
 
 # S.T.A.R.E
@@ -109,4 +109,4 @@ stare/
 │   └── go.mod
 ├── docker-compose.yml   # Оркестрация контейнеров
 └── README.md
-```
+
