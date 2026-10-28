@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import StartScreen from './assets/pages/StartScreen/StartScreen';
 import MainScreen from './assets/pages/MainScreen/MainScreen';
+
 function App() {
   const [currentScreen, setCurrentScreen] = useState('start');
 
