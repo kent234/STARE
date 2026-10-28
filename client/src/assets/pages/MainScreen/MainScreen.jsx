@@ -1,63 +1,62 @@
 import React, { useState, useEffect, useRef } from 'react';
 import GlassButton from '../../components/ui/GlassButton';
+import GraphVisualizer from '../../features/graph/GraphVisualizer'; // Импортируем граф
 import './MainScreen.css';
 
 function MainScreen({ onBack }) {
   const [target, setTarget] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [logs, setLogs] = useState(['[SYSTEM] Interface initialized...', '[SYSTEM] Awaiting target input.']);
+  const [scanData, setScanData] = useState(null);
   const logsEndRef = useRef(null);
 
-  // Автоскролл логов вниз
-  const scrollToBottom = () => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // Автоскролл логов
+  const scrollToBottom = () => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useEffect(() => scrollToBottom(), [logs]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [logs]);
-
-  const handleScan = () => {
-    if (!target.trim()) {
-      setLogs(prev => [...prev, '[ERROR] Target cannot be empty.']);
-      return;
-    }
+  const handleScan = async () => {
+    if (!target.trim()) return;
 
     setIsScanning(true);
-    setLogs(prev => [
-      ...prev, 
-      `[INIT] Starting sequence for target: ${target}`,
-      `[SCAN] Resolving DNS...`,
-      `[SCAN] Querying crt.sh...`
-    ]);
+    setScanData(null);
+    setLogs(prev => [...prev, `[INIT] Connecting to backend API...`, `[SCAN] Target: ${target}`]);
 
-    // Имитация работы сканера (потом заменишь на реальный fetch)
-    setTimeout(() => {
+    try {
+      // ЖДЕМ РЕАЛЬНЫЙ ОТВЕТ ОТ GO-СЕРВЕРА
+      const response = await fetch('http://localhost:8080/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: target })
+      });
+
+      if (!response.ok) throw new Error('Server error');
+
+      const data = await response.json();
+      
+      setScanData(data); // Передаем данные в граф
       setLogs(prev => [
-        ...prev, 
-        `[+] Found 12 subdomains.`,
-        `[SCAN] Probing ports on 192.168.1.1...`,
-        `[+] Open ports: 80, 443, 3306 (MySQL).`,
-        `[WARN] Outdated IIS 8.5 detected.`,
-        `[DONE] Scan complete.`
+        ...prev,
+        `[+] Scan complete in ${data.duration}`,
+        `[+] Found ${data.subdomains?.length || 0} subdomains.`,
+        `[+] Found ${Object.keys(data.ports || {}).length} hosts with open ports.`,
+        `[DONE] Rendering graph...`
       ]);
+
+    } catch (error) {
+      setLogs(prev => [...prev, `[ERROR] Failed to connect: ${error.message}`]);
+    } finally {
       setIsScanning(false);
-    }, 3000);
+    }
   };
 
   return (
     <div className="main-screen">
-      {/* Эффекты монитора */}
       <div className="scanlines"></div>
       <div className="crt-flicker"></div>
       <div className="vignette"></div>
 
-      {/* ВЕРХНЯЯ ПАНЕЛЬ: Ввод */}
       <header className="control-bar">
-        <button className="back-btn" onClick={onBack}>
-          [ &lt; BACK ]
-        </button>
-        
+        <button className="back-btn" onClick={onBack}>[ &lt; BACK ]</button>
         <div className="input-group">
           <span className="prompt-symbol">&gt;_</span>
           <input 
@@ -70,45 +69,37 @@ function MainScreen({ onBack }) {
             disabled={isScanning}
           />
         </div>
-
         <GlassButton onClick={handleScan} disabled={isScanning}>
           {isScanning ? 'SCANNING...' : '[ EXECUTE ]'}
         </GlassButton>
       </header>
 
-      {/* ОСНОВНАЯ ЗОНА: Граф и Логи */}
       <main className="workspace">
-        
-        {/* Левая часть: Окно графа */}
         <section className="graph-panel">
           <div className="panel-header">[ VISUALIZER ]</div>
-          <div className="graph-container">
-            {!isScanning && logs.length <= 2 ? (
+          
+          {scanData ? (
+             <GraphVisualizer data={scanData} />
+          ) : (
+            <div className="graph-container">
               <div className="placeholder-text">
-                AWAITING DATA STREAM...
+                {isScanning ? 'RECEIVING DATA STREAM...' : 'AWAITING DATA STREAM...'}
               </div>
-            ) : (
-              <div className="placeholder-text active">
-                {/* Сюда позже вставим Cytoscape.js */}
-                [GRAPH RENDERED HERE]
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </section>
 
-        {/* Правая часть: Логи */}
         <section className="logs-panel">
           <div className="panel-header">[ SYSTEM.LOGS ]</div>
           <div className="logs-container">
             {logs.map((log, index) => (
-              <div key={index} className={`log-line ${log.includes('[+]') ? 'success' : log.includes('[ERROR]') || log.includes('[WARN]') ? 'error' : ''}`}>
+              <div key={index} className={`log-line ${log.includes('[+]') ? 'success' : log.includes('[ERROR]') ? 'error' : ''}`}>
                 {log}
               </div>
             ))}
             <div ref={logsEndRef} />
           </div>
         </section>
-
       </main>
     </div>
   );
