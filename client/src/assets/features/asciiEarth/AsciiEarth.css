@@ -1,0 +1,21 @@
+.ascii-earth-container {
+  display: flex;
+  justify-content: flex-end; /* Прижимаем землю вправо внутри контейнера */
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.ascii-earth {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-bright); /* Белая земля */
+  text-shadow: 0 0 10px var(--accent-glow);
+  white-space: pre;
+  margin: 0;
+  user-select: none;
+  
+  /* Магия для отсечения левой части */
+  transform: translateX(-25%); /* Сдвигаем немного влево */
+}

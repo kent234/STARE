@@ -1,0 +1,61 @@
+.glass-card {
+  position: relative;
+  padding: 32px;
+  min-width: 300px;
+  max-width: 600px;
+  
+  /* фон и рамка */
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-medium);
+  backdrop-filter: blur(var(--glass-blur));
+  
+  /* тень */
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),  /* тень снизу */
+    inset 0 1px 0 rgba(255, 255, 255, 0.1); /* блик сверху */
+
+  transition: all 0.3s ease;       /* анимации */
+}
+
+/* при наведении */
+.glass-card:hover {
+  border-color: rgba(0, 255, 65, 0.4); /* рамка становится чуть ярче */
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.4),  /* Тень темнее */
+    0 0 20px var(--hacker-green-glow), /* зелёное свечение */
+    inset 0 1px 0 rgba(255, 255, 255, 0.15); /* блик ярче */
+}
+
+/* для маленькой */
+.glass-card--small {
+  padding: 20px;                   /* отступы */
+  min-width: 250px;                /* ширина */
+}
+
+/* для большой */
+.glass-card--large {
+  padding: 48px;                   /* отступы */
+  max-width: 800px;                /* ширина */
+}
+
+.glass-card--outline {
+  background: transparent;
+}
+
+/* заголовок */
+.glass-card__title {
+  font-family: var(--font-mono);
+  font-size: 24px;                 /* шрифт */
+  color: var(--text-bright);
+  margin-bottom: 16px;             /* отступ снизу */
+  text-transform: uppercase;
+  letter-spacing: 2px;             /* расстояние между буквами */
+}
+
+/* описание внутри карточки */
+.glass-card__description {
+  font-size: 16px;                 /* шрифт */
+  color: var(--text-main);
+  line-height: 1.6;                /* межстрочный интервал */
+}

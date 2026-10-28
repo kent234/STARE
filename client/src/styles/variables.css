@@ -1,0 +1,37 @@
+:root {
+  /* ЦВЕТА ФОНА */
+  --bg-dark: #0a0a0a;          
+  --bg-darker: #050505;        
+  --bg-panel: #111111;         
+
+  /* ХАКЕРСКИЙ АКЦЕНТ */
+  --accent-color: #ffffff;     
+  --accent-dim: #a0a0a0;       
+  --accent-glow: rgba(255, 255, 255, 0.2); 
+
+  /* Для глитча (RGB-разделение) */
+  --glitch-cyan: #00e5ff;
+  --glitch-red: #ff003c;
+
+  /* ТЕКСТ */
+  --text-main: #cccccc;        
+  --text-dim: #666666;         
+  --text-bright: #ffffff;      
+
+  /* ЭФФЕКТ СТЕКЛА */
+  --glass-bg: rgba(15, 15, 15, 0.6);     
+  --glass-border: rgba(255, 255, 255, 0.1); 
+  --glass-blur: 12px;                    
+
+  /* РАЗМЕРЫ */
+  --radius-small: 8px;         
+  --radius-medium: 16px;       
+  --radius-large: 24px;        
+  --spacing-small: 8px;
+  --spacing-medium: 16px;
+  --spacing-large: 32px;
+
+  /* ШРИФТЫ */
+  --font-main: 'Segoe UI', Tahoma, sans-serif;  
+  --font-mono: 'Courier New', monospace;        
+}
