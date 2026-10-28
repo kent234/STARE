@@ -1,10 +1,142 @@
+.graph-wrapper {
+  position: relative;
+  flex: 1; 
+  width: 100%;
+  height: 100%;
+  min-height: 0; 
+  overflow: hidden;
+}
+
 .graph-container {
   width: 100%;
   height: 100%;
   background-color: #050505;
-  /* Легкая сетка на фоне */
   background-image: 
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 20px 20px;
+}
+
+.graph-tooltip {
+  position: absolute;
+  background: rgba(10, 10, 10, 0.95);
+  border: 1px solid var(--accent-color, #fff);
+  color: var(--text-main, #ccc);
+  padding: 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  pointer-events: none; 
+  z-index: 100;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+  line-height: 1.4;
+  border-radius: 4px;
+}
+
+.graph-tooltip.risky {
+  border-color: #ff003c;
+  color: #ff003c;
+  box-shadow: 0 0 15px rgba(255, 0, 60, 0.4);
+}
+
+.node-details-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100%;
+  background: rgba(10, 10, 10, 0.95);
+  border-left: 1px solid var(--accent-color, #fff);
+  box-shadow: -5px 0 20px rgba(0, 0, 0, 0.8);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(5px);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.node-details-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: #111;
+  border-bottom: 1px solid #333;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+}
+
+.node-details-panel .panel-header button {
+  background: transparent;
+  border: none;
+  color: #ff003c;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.node-details-panel .panel-header button:hover {
+  text-shadow: 0 0 5px #ff003c;
+}
+
+.node-details-panel .panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+}
+
+.node-details-panel .panel-content::-webkit-scrollbar {
+  width: 6px;
+}
+.node-details-panel .panel-content::-webkit-scrollbar-track {
+  background: #000;
+}
+.node-details-panel .panel-content::-webkit-scrollbar-thumb {
+  background: #333;
+}
+
+/* === СТИЛИ ДЛЯ JSON ВЬЮЕРА === */
+.json-viewer {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a0a0a0;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.json-bracket, .json-comma, .json-colon {
+  color: #555;
+}
+
+.json-key {
+  color: #00e5ff; 
+  font-weight: bold;
+}
+
+.json-string {
+  color: #ffffff;
+}
+
+.json-number {
+  color: #ffb000;
+}
+
+.json-boolean {
+  color: #00ff41;
+}
+
+.json-null {
+  color: #ff003c;
+}
+
+.json-viewer div:hover {
+  background-color: rgba(255, 255, 255, 0.03);
 }

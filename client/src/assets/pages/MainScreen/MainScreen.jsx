@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import GlassButton from '../../components/ui/GlassButton';
-import GraphVisualizer from '../../features/graph/GraphVisualizer'; // Импортируем граф
+import GraphVisualizer from '../../features/graph/GraphVisualizer';
 import './MainScreen.css';
 
 function MainScreen({ onBack }) {
@@ -10,9 +10,11 @@ function MainScreen({ onBack }) {
   const [scanData, setScanData] = useState(null);
   const logsEndRef = useRef(null);
 
-  // Автоскролл логов
-  const scrollToBottom = () => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  useEffect(() => scrollToBottom(), [logs]);
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs]);
 
   const handleScan = async () => {
     if (!target.trim()) return;
@@ -22,7 +24,6 @@ function MainScreen({ onBack }) {
     setLogs(prev => [...prev, `[INIT] Connecting to backend API...`, `[SCAN] Target: ${target}`]);
 
     try {
-      // ЖДЕМ РЕАЛЬНЫЙ ОТВЕТ ОТ GO-СЕРВЕРА
       const response = await fetch('http://localhost:8080/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -33,7 +34,7 @@ function MainScreen({ onBack }) {
 
       const data = await response.json();
       
-      setScanData(data); // Передаем данные в граф
+      setScanData(data);
       setLogs(prev => [
         ...prev,
         `[+] Scan complete in ${data.duration}`,

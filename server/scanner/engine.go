@@ -1,37 +1,45 @@
 package scanner
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
 )
 
-// ScanResult — итоговая структура, которую мы отдадим в React
+// ScanResult — структура, которую мы отдадим в React
 type ScanResult struct {
-	Target     string              `json:"target"`
-	Subdomains []string            `json:"subdomains"`
-	IPs        []string            `json:"ips"`
-	Ports      map[string][]int    `json:"ports"`
-	DNS        ExtendedDNS         `json:"dns"`
-	Whois      map[string]string   `json:"whois"`
-	ASN        map[string]string   `json:"asn"`
-	Artifacts  Artifacts           `json:"artifacts"`
-	Errors     []string            `json:"errors"`
-	Duration   string              `json:"duration"`
+	Target       string              `json:"target"`
+	Subdomains   []string            `json:"subdomains"`
+	SubdomainIPs map[string][]string `json:"subdomain_ips"`
+	IPs          []string            `json:"ips"`
+	Ports        map[string][]int    `json:"ports"`
+	Banners      map[string]string   `json:"banners"` // НОВОЕ: Баннеры сервисов
+	DNS          ExtendedDNS         `json:"dns"`
+	Whois        map[string]string   `json:"whois"`
+	ASN          map[string]string   `json:"asn"`
+	Artifacts    Artifacts           `json:"artifacts"`
+	Technologies []string            `json:"technologies"`
+	Errors       []string            `json:"errors"`
+	Duration     string              `json:"duration"`
 }
 
 // RunFullScan — выполняет полный цикл разведки и возвращает результат
 func RunFullScan(ctx context.Context, target string) *ScanResult {
 	start := time.Now()
 	result := &ScanResult{
-		Target: target,
-		Ports:  make(map[string][]int),
-		ASN:    make(map[string]string),
+		Target:       target,
+		Ports:        make(map[string][]int),
+		Banners:      make(map[string]string),
+		ASN:          make(map[string]string),
+		SubdomainIPs: make(map[string][]string),
+		Errors:       []string{},
 	}
 
-	// Применяем Public Suffix List (очищаем домен)
+	// Очищаем домен (PSL)
 	if root, err := ExtractRootDomain(target); err == nil {
 		result.Target = root
 		target = root
@@ -47,38 +55,32 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		result.Subdomains = append(result.Subdomains, subs...)
 	}
 
-	// 1. ПАССИВНЫЙ СБОР (Параллельно)
-	sources := []struct {
-		Name string
-		Fn   func(context.Context, string) ([]string, error)
-	}{
-		{"crt.sh", func(c context.Context, d string) ([]string, error) { return NewCRTShClient().FetchSubdomains(c, d) }},
-		{"crt.name", FetchCRTName},
-		{"RapidDNS", FetchRapidDNS},
-		{"HackerTarget", FetchHackerTarget},
-		{"AlienVault", FetchAlienVaultOTX},
-		{"AnubisDB", FetchAnubisDB},
-		{"ThreatMiner", FetchThreatMiner},
-		{"URLScan", FetchURLScan},
+	// 1. Пассивный сбор (все источники параллельно)
+	sources := []func(context.Context, string) ([]string, error){
+		func(c context.Context, d string) ([]string, error) { return NewCRTShClient().FetchSubdomains(c, d) },
+		FetchCRTName, FetchRapidDNS, FetchHackerTarget,
+		FetchAlienVaultOTX, FetchAnubisDB, FetchThreatMiner, FetchURLScan, FetchTLSCC,
 	}
 
-	for _, src := range sources {
+	for _, fn := range sources {
 		wg.Add(1)
-		go func(fn func(context.Context, string) ([]string, error)) {
+		go func(f func(context.Context, string) ([]string, error)) {
 			defer wg.Done()
-			subs, err := fn(ctx, target)
+			subs, err := f(ctx, target)
 			if err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, err.Error())
 				mu.Unlock()
 				return
 			}
-			addSubdomains(subs)
-		}(src.Fn)
+			if len(subs) > 0 {
+				addSubdomains(subs)
+			}
+		}(fn)
 	}
 
-	// 2. DNS и WHOIS (параллельно с поддоменами)
-	wg.Add(2)
+	// 2. DNS, WHOIS и Технологии
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		result.DNS = dns.ResolveExtended(ctx, target)
@@ -88,18 +90,25 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		whois, _ := FetchWhoisUniversal(ctx, target)
 		result.Whois = whois
 	}()
+	go func() {
+		defer wg.Done()
+		arts, techs := AnalyzeArtifacts(ctx, target)
+		result.Artifacts = arts
+		result.Technologies = techs
+	}()
 
 	wg.Wait()
 	result.Subdomains = uniqueSorted(result.Subdomains)
 
-	// 3. Резолвинг IP
+	// 3. IP-адреса и связь с поддоменами
 	ips := []string{}
 	resolved, _ := dns.Resolve(ctx, target)
 	ips = append(ips, resolved...)
-	
+
 	for _, sub := range result.Subdomains {
-		if subIPs, err := dns.Resolve(ctx, sub); err == nil {
+		if subIPs, err := dns.Resolve(ctx, sub); err == nil && len(subIPs) > 0 {
 			ips = append(ips, subIPs...)
+			result.SubdomainIPs[sub] = subIPs
 		}
 	}
 	result.IPs = uniqueSorted(ips)
@@ -110,18 +119,61 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		result.ASN[ip] = asn
 	}
 
-	// 5. Порты
+	// 5. Порты и Баннеры
 	if len(result.IPs) > 0 {
 		portsClient := NewPortsClient()
-		openPorts, _ := portsClient.ScanPortsMany(ctx, result.IPs)
-		result.Ports = openPorts
-	}
+		result.Ports, _ = portsClient.ScanPortsMany(ctx, result.IPs)
 
-	// 6. Артефакты (robots.txt, заголовки)
-	result.Artifacts = CheckArtifacts(ctx, target)
+		var wgBanners sync.WaitGroup
+		for ip, ports := range result.Ports {
+			for _, port := range ports {
+				wgBanners.Add(1)
+				go func(ipAddr string, p int) {
+					defer wgBanners.Done()
+					banner := grabBanner(ctx, ipAddr, p)
+					if banner != "" {
+						mu.Lock()
+						result.Banners[fmt.Sprintf("%s:%d", ipAddr, p)] = banner
+						mu.Unlock()
+					}
+				}(ip, port)
+			}
+		}
+		wgBanners.Wait()
+	}
 
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 	return result
+}
+
+// Встроенная функция для быстрого получения баннера
+func grabBanner(ctx context.Context, ip string, port int) string {
+	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	reader := bufio.NewReader(conn)
+
+	// Читаем первые 100 байт (версию сервиса)
+	buffer := make([]byte, 100)
+	n, _ := reader.Read(buffer)
+
+	// Чистим от непечатных символов
+	rawBanner := string(buffer[:n])
+	cleanBanner := strings.Map(func(r rune) rune {
+		if r >= 32 && r <= 126 {
+			return r
+		}
+		return -1
+	}, rawBanner)
+
+	return strings.TrimSpace(cleanBanner)
 }
 
 func uniqueSorted(in []string) []string {
@@ -136,11 +188,5 @@ func uniqueSorted(in []string) []string {
 	for s := range seen {
 		out = append(out, s)
 	}
-	// sort.Strings(out) // если нужна сортировка
 	return out
-}
-
-func init() {
-	// Пустая функция init на случай, если fmt не используется
-	_ = fmt.Sprint
 }
