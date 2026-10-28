@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "ascii-globe": "^0.5.0",
+    "cytoscape": "^3.34.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.186.1"
