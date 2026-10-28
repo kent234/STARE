@@ -1,182 +1,116 @@
-import { useState } from 'react';
-import MatrixRain from '../../features/matrixRain/MatrixRain';
-import GlassCard from '../../components/ui/GlassCard';
+import React, { useState, useEffect, useRef } from 'react';
 import GlassButton from '../../components/ui/GlassButton';
-import GlassInput from '../../components/ui/GlassInput';
 import './MainScreen.css';
 
 function MainScreen({ onBack }) {
-  const [url, setUrl] = useState('');
-  
-  // Состояния для чекбоксов
-  const [enableLogs, setEnableLogs] = useState(true);      // Включить логи
-  const [autoRefresh, setAutoRefresh] = useState(false);   // Автообновление
-  const [darkMode, setDarkMode] = useState(true);          // Тёмная тема
-  const [notifications, setNotifications] = useState(true); // Уведомления
+  const [target, setTarget] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [logs, setLogs] = useState(['[SYSTEM] Interface initialized...', '[SYSTEM] Awaiting target input.']);
+  const logsEndRef = useRef(null);
 
-  // Обработчик изменения поля ввода
-  const handleUrlChange = (e) => {
-    setUrl(e.target.value);
+  // Автоскролл логов вниз
+  const scrollToBottom = () => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Обработчик кнопки "Старт"
-  const handleStart = () => {
-    if (url.trim()) {
-      console.log('Запуск анализа ссылки:', url);
-      // здесь будет логика запуска
-      alert(`Запущен анализ: ${url}`);
-    } else {
-      alert('Введите ссылку!');
+  useEffect(() => {
+    scrollToBottom();
+  }, [logs]);
+
+  const handleScan = () => {
+    if (!target.trim()) {
+      setLogs(prev => [...prev, '[ERROR] Target cannot be empty.']);
+      return;
     }
-  };
 
-  // Обработчик кнопки "Очистить"
-  const handleClear = () => {
-    setUrl('');
-    console.log('Поле очищено');
+    setIsScanning(true);
+    setLogs(prev => [
+      ...prev, 
+      `[INIT] Starting sequence for target: ${target}`,
+      `[SCAN] Resolving DNS...`,
+      `[SCAN] Querying crt.sh...`
+    ]);
+
+    // Имитация работы сканера (потом заменишь на реальный fetch)
+    setTimeout(() => {
+      setLogs(prev => [
+        ...prev, 
+        `[+] Found 12 subdomains.`,
+        `[SCAN] Probing ports on 192.168.1.1...`,
+        `[+] Open ports: 80, 443, 3306 (MySQL).`,
+        `[WARN] Outdated IIS 8.5 detected.`,
+        `[DONE] Scan complete.`
+      ]);
+      setIsScanning(false);
+    }, 3000);
   };
 
   return (
-    <>
-      <MatrixRain />
-
     <div className="main-screen">
-      
-      {/* Заголовок панели */}
-      <header className="main-screen__header">
-        <h1 className="main-screen__title">Панель управления</h1>
-        <GlassButton size="small" onClick={onBack}>
-          Назад
+      {/* Эффекты монитора */}
+      <div className="scanlines"></div>
+      <div className="crt-flicker"></div>
+      <div className="vignette"></div>
+
+      {/* ВЕРХНЯЯ ПАНЕЛЬ: Ввод */}
+      <header className="control-bar">
+        <button className="back-btn" onClick={onBack}>
+          [ &lt; BACK ]
+        </button>
+        
+        <div className="input-group">
+          <span className="prompt-symbol">&gt;_</span>
+          <input 
+            type="text" 
+            className="terminal-input"
+            placeholder="Enter target domain or IP..."
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleScan()}
+            disabled={isScanning}
+          />
+        </div>
+
+        <GlassButton onClick={handleScan} disabled={isScanning}>
+          {isScanning ? 'SCANNING...' : '[ EXECUTE ]'}
         </GlassButton>
       </header>
 
-      {/* Основной контент */}
-      <div className="main-screen__content">
+      {/* ОСНОВНАЯ ЗОНА: Граф и Логи */}
+      <main className="workspace">
         
-        {/* Секция 1: Ввод ссылки */}
-        <GlassCard title="Анализ ссылки" size="large">
-          <div className="main-screen__section">
-            
-            {/* Поле ввода ссылки */}
-            <GlassInput
-              label="Введите URL для анализа"
-              placeholder="https://example.com"
-              value={url}
-              onChange={handleUrlChange}
-              type="text"
-              size="large"
-            />
-
-            {/* Кнопки управления */}
-            <div className="main-screen__row">
-              <GlassButton size="large" onClick={handleStart}>
-                Старт
-              </GlassButton>
-              <GlassButton size="large" onClick={handleClear}>
-                Очистить
-              </GlassButton>
-              <GlassButton size="large" disabled>
-                Экспорт
-              </GlassButton>
-            </div>
-
+        {/* Левая часть: Окно графа */}
+        <section className="graph-panel">
+          <div className="panel-header">[ VISUALIZER ]</div>
+          <div className="graph-container">
+            {!isScanning && logs.length <= 2 ? (
+              <div className="placeholder-text">
+                AWAITING DATA STREAM...
+              </div>
+            ) : (
+              <div className="placeholder-text active">
+                {/* Сюда позже вставим Cytoscape.js */}
+                [GRAPH RENDERED HERE]
+              </div>
+            )}
           </div>
-        </GlassCard>
+        </section>
 
-        {/* Секция 2: Настройки */}
-        <GlassCard title="Настройки">
-          <div className="main-screen__section">
-            <h3 className="main-screen__section-title">Параметры</h3>
-            
-            {/* Группа чекбоксов */}
-            <div className="main-screen__checkbox-group">
-              
-              {/* Чекбокс: Включить логи */}
-              <label className="main-screen__checkbox-item">
-                <input
-                  type="checkbox"
-                  className="main-screen__checkbox"
-                  checked={enableLogs}
-                  onChange={(e) => setEnableLogs(e.target.checked)}
-                />
-                <span className="main-screen__checkbox-label">
-                  Включить логирование
-                </span>
-              </label>
-
-              {/* Чекбокс: Автообновление */}
-              <label className="main-screen__checkbox-item">
-                <input
-                  type="checkbox"
-                  className="main-screen__checkbox"
-                  checked={autoRefresh}
-                  onChange={(e) => setAutoRefresh(e.target.checked)}
-                />
-                <span className="main-screen__checkbox-label">
-                  Автоматическое обновление
-                </span>
-              </label>
-
-              {/* Чекбокс: Тёмная тема */}
-              <label className="main-screen__checkbox-item">
-                <input
-                  type="checkbox"
-                  className="main-screen__checkbox"
-                  checked={darkMode}
-                  onChange={(e) => setDarkMode(e.target.checked)}
-                />
-                <span className="main-screen__checkbox-label">
-                  Тёмная тема
-                </span>
-              </label>
-
-              {/* Чекбокс: Уведомления */}
-              <label className="main-screen__checkbox-item">
-                <input
-                  type="checkbox"
-                  className="main-screen__checkbox"
-                  checked={notifications}
-                  onChange={(e) => setNotifications(e.target.checked)}
-                />
-                <span className="main-screen__checkbox-label">
-                  Уведомления
-                </span>
-              </label>
-
-            </div>
+        {/* Правая часть: Логи */}
+        <section className="logs-panel">
+          <div className="panel-header">[ SYSTEM.LOGS ]</div>
+          <div className="logs-container">
+            {logs.map((log, index) => (
+              <div key={index} className={`log-line ${log.includes('[+]') ? 'success' : log.includes('[ERROR]') || log.includes('[WARN]') ? 'error' : ''}`}>
+                {log}
+              </div>
+            ))}
+            <div ref={logsEndRef} />
           </div>
-        </GlassCard>
+        </section>
 
-        {/* Секция 3: Дополнительные кнопки */}
-        <GlassCard title="Действия">
-          <div className="main-screen__section">
-            <h3 className="main-screen__section-title">Быстрые действия</h3>
-            
-            {/* Ряд с кнопками */}
-            <div className="main-screen__row">
-              <GlassButton size="small">Сканировать</GlassButton>
-              <GlassButton size="small">Анализировать</GlassButton>
-              <GlassButton size="small">Отчёт</GlassButton>
-              <GlassButton size="small">Настройки</GlassButton>
-            </div>
-
-            {/* Ещё один ряд кнопок */}
-            <div className="main-screen__row">
-              <GlassButton size="small" disabled>
-                Архив
-              </GlassButton>
-              <GlassButton size="small" disabled>
-                Статистика
-              </GlassButton>
-              <GlassButton size="small" disabled>
-                Помощь
-              </GlassButton>
-            </div>
-          </div>
-        </GlassCard>
-      </div>
+      </main>
     </div>
-    </>
   );
 }
 

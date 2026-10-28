@@ -1,35 +1,37 @@
 :root {
   /* ЦВЕТА ФОНА */
-  --bg-dark: #0a0a0a;          /* основной фон сайта */
-  --bg-darker: #050505;        /* для теней */
-  --bg-panel: #111111;         /* для панелей и карточек */
+  --bg-dark: #0a0a0a;          
+  --bg-darker: #050505;        
+  --bg-panel: #111111;         
 
-  /* ХАКЕРСКИЙ ЗЕЛЁНЫЙ */
-  --hacker-green: #00ff41;     /* для кнопок, подсветки */
-  --hacker-green-dim: #008f11; /* для рамок, второстепенных элементов */
-  --hacker-green-glow: rgba(0, 255, 65, 0.4); /* полупрозрачное свечение */
+  /* ХАКЕРСКИЙ АКЦЕНТ */
+  --accent-color: #ffffff;     
+  --accent-dim: #a0a0a0;       
+  --accent-glow: rgba(255, 255, 255, 0.2); 
 
-  /*ТЕКСТ*/
-  --text-main: #e0e0e0;        /* основной цвет текста*/
-  --text-dim: #888888;         /* подписи и описаниЯ*/
-  --text-bright: #ffffff;      /* для заголовков */
+  /* Для глитча (RGB-разделение) */
+  --glitch-cyan: #00e5ff;
+  --glitch-red: #ff003c;
 
-  /*эффект стекал */
-  --glass-bg: rgba(20, 20, 20, 0.6);     /* Полупрозрачный тёмный фон */
-  --glass-border: rgba(0, 255, 65, 0.2); /* зелёная рамка у стеклянных элементов */
-  --glass-blur: 12px;                    /* сила размытия фона под стеклом*/
+  /* ТЕКСТ */
+  --text-main: #cccccc;        
+  --text-dim: #666666;         
+  --text-bright: #ffffff;      
+
+  /* ЭФФЕКТ СТЕКЛА */
+  --glass-bg: rgba(15, 15, 15, 0.6);     
+  --glass-border: rgba(255, 255, 255, 0.1); 
+  --glass-blur: 12px;                    
 
   /* РАЗМЕРЫ */
-  --radius-small: 8px;         /* для кнопок, полей */
-  --radius-medium: 16px;       /* для карточек */
-  --radius-large: 24px;        /* для крупных блоков */
-
-  /* ОТСТУПЫ */
+  --radius-small: 8px;         
+  --radius-medium: 16px;       
+  --radius-large: 24px;        
   --spacing-small: 8px;
   --spacing-medium: 16px;
   --spacing-large: 32px;
 
-  /*ШРИФТЫ */
-  --font-main: 'Segoe UI', Tahoma, sans-serif;  /* основной */
-  --font-mono: 'Courier New', monospace;        /* для кул хацкерного текста, кода)))) */
+  /* ШРИФТЫ */
+  --font-main: 'Segoe UI', Tahoma, sans-serif;  
+  --font-mono: 'Courier New', monospace;        
 }
