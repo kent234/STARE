@@ -1,0 +1,188 @@
+.login-container {
+  width: 100vw;
+  height: 100vh;
+  background-color: #050505;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Courier New', monospace;
+  
+  /* Зеленая сетка на фоне */
+  background-image: 
+    linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Объемный темно-серый корпус */
+.monitor-frame {
+  position: relative;
+  background: linear-gradient(145deg, #2a2a2a, #151515);
+  border-radius: 15px;
+  padding: 50px 50px 80px 50px;
+  box-shadow: 
+    10px 10px 30px rgba(0,0,0,0.9), 
+    -5px -5px 20px rgba(255,255,255,0.05),
+    inset -2px -2px 5px rgba(0,0,0,0.8),
+    inset 2px 2px 5px rgba(255,255,255,0.1);
+  border: 1px solid #333;
+  width: 850px;
+  max-width: 95vw;
+}
+
+/* Вентиляционные отверстия */
+.monitor-vent {
+  position: absolute;
+  top: 20px;
+  right: 30px;
+  width: 120px;
+  height: 12px;
+  background: repeating-linear-gradient(90deg, #111, #111 4px, transparent 4px, transparent 8px);
+  border-radius: 2px;
+}
+
+/* Кнопка питания */
+.power-led {
+  position: absolute;
+  bottom: 25px;
+  right: 40px;
+  width: 10px;
+  height: 10px;
+  background: #00ff41;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41;
+}
+
+/* Экран */
+.crt-screen {
+  background: #000;
+  border-radius: 15px;
+  height: 550px;
+  position: relative;
+  overflow: hidden;
+  border: 8px solid #0a0a0a;
+  box-shadow: 
+    inset 0 0 80px rgba(0,0,0,1),
+    0 0 20px rgba(0,0,0,0.5);
+}
+
+.crt-content {
+  padding: 50px;
+  color: #00ff41;
+  text-shadow: 0 0 5px rgba(0,255,65,0.5);
+  position: relative;
+  z-index: 10;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-header {
+  border-bottom: 1px dashed #00ff41;
+  padding-bottom: 15px;
+  margin-bottom: 50px;
+  font-size: 16px;
+  letter-spacing: 2px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  max-width: 450px;
+}
+
+.input-line {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #004411;
+}
+
+.prompt {
+  color: #00ff41;
+  width: 100px;
+  font-weight: bold;
+}
+
+.input-line input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  outline: none;
+  width: 100%;
+  padding: 8px 0;
+  letter-spacing: 2px;
+}
+
+.login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 30px;
+}
+
+.login-actions button {
+  background: transparent;
+  border: 1px solid #00ff41;
+  color: #00ff41;
+  padding: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  transition: all 0.2s;
+  box-shadow: 0 0 5px rgba(0,255,65,0.2);
+}
+
+.login-actions button:hover {
+  background: rgba(0, 255, 65, 0.15);
+  box-shadow: 0 0 20px rgba(0, 255, 65, 0.6);
+}
+
+.toggle-mode {
+  color: #008822;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.toggle-mode:hover {
+  color: #00ff41;
+}
+
+.error-msg {
+  color: #ff003c;
+  text-shadow: 0 0 5px rgba(255,0,60,0.5);
+  font-size: 14px;
+}
+.error-msg.success {
+  color: #00ff41;
+  text-shadow: 0 0 5px rgba(0,255,65,0.5);
+}
+
+/* Подставка монитора */
+.monitor-stand {
+  position: absolute;
+  bottom: 25px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 150px;
+  height: 50px;
+  background: linear-gradient(to bottom, #222, #111);
+  border-radius: 5px;
+}
+.monitor-base {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 350px;
+  height: 30px;
+  background: linear-gradient(to bottom, #1a1a1a, #0a0a0a);
+  border-radius: 20px 20px 0 0;
+  box-shadow: inset 0 5px 10px rgba(255,255,255,0.05);
+}

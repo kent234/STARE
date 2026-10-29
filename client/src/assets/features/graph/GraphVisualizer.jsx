@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import cytoscape from 'cytoscape';
 import './GraphVisualizer.css';
 
-// Компонент для красивого вывода JSON (с цветами)
 const PrettyJson = ({ data, indent = 0 }) => {
   if (data === null) return <span className="json-null">null</span>;
   if (typeof data === 'boolean') return <span className="json-boolean">{String(data)}</span>;
@@ -52,7 +51,8 @@ function GraphVisualizer({ data }) {
   const [selectedNode, setSelectedNode] = useState(null);
 
   useEffect(() => {
-    if (!data || !containerRef.current) return;
+    // Если данных нет, просто выходим (возвращаем undefined)
+    if (!data || !containerRef.current) return undefined;
 
     const nodes = [];
     const edges = [];
@@ -115,7 +115,7 @@ function GraphVisualizer({ data }) {
         layout: { name: 'cose', animate: true, nodeRepulsion: 1500000, idealEdgeLength: 150, gravity: 0.1 }
       });
     } catch (error) {
-      console.error(error);
+      console.error("Cytoscape init error:", error);
     }
 
     if (cy) {
@@ -156,13 +156,11 @@ function GraphVisualizer({ data }) {
         else if (node.type === 'port' || node.type === 'risky-port') {
            info.PortNumber = node.label;
            info.Status = "OPEN";
-           
            if (data.banners && data.banners[node.id]) {
              info.ServiceBanner = data.banners[node.id];
            } else {
              info.ServiceBanner = "Unknown (No banner)";
            }
-
            if (node.type === 'risky-port') info.Warning = "CRITICAL RISK (Unauthorized exposure)";
         }
         
@@ -170,7 +168,12 @@ function GraphVisualizer({ data }) {
       });
     }
 
-    return () => { if (cy) cy.destroy(); };
+    // САМАЯ БЕЗОПАСНАЯ ОЧИСТКА (Гарантирует, что вернется функция, а не результат её вызова)
+    return function cleanup() {
+      if (cy && typeof cy.destroy === 'function') {
+        cy.destroy();
+      }
+    };
   }, [data]);
 
   return (

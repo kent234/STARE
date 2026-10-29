@@ -1,7 +1,27 @@
 version: '3.8'
 
 services:
-  # Бэкенд на Go
+  postgres:
+    image: postgres:15-alpine
+    container_name: stare_postgres
+    environment:
+      POSTGRES_USER: stare
+      POSTGRES_PASSWORD: starepass
+      POSTGRES_DB: staredb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: stare_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
   backend:
     build: 
       context: ./server
@@ -9,9 +29,17 @@ services:
     container_name: stare_backend
     ports:
       - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=stare
+      - DB_PASSWORD=starepass
+      - DB_NAME=staredb
+      - REDIS_HOST=redis
+    depends_on:
+      - postgres
+      - redis
     restart: unless-stopped
 
-  # Фронтенд на React
   frontend:
     build:
       context: ./client
@@ -22,3 +50,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  pgdata:
