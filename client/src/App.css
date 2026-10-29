@@ -1,0 +1,45 @@
+.boot-screen {
+  width: 100vw;
+  height: 100vh;
+  background-color: #000;
+  color: #00ff41;
+  font-family: 'Courier New', monospace;
+  padding: 50px;
+  box-sizing: border-box;
+  font-size: 16px;
+  line-height: 1.6;
+  text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+  
+  /* РЕТРО-СЕТКА НА ФОНЕ */
+  background-image: 
+    linear-gradient(rgba(0, 255, 65, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 65, 0.05) 1px, transparent 1px);
+  background-size: 30px 30px;
+  animation: gridMove 5s linear infinite;
+}
+
+@keyframes gridMove {
+  from { background-position: 0 0; }
+  to { background-position: 0 30px; }
+}
+
+.boot-content {
+  position: relative;
+  z-index: 10;
+}
+
+.boot-screen .highlight {
+  color: #fff;
+  font-weight: bold;
+  text-shadow: 0 0 10px #fff;
+}
+
+.boot-screen .cursor {
+  animation: blink 1s step-end infinite;
+  font-size: 18px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

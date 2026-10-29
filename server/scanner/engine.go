@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -148,8 +149,8 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 
 // Встроенная функция для быстрого получения баннера
 func grabBanner(ctx context.Context, ip string, port int) string {
-	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
-	dialer := &net.Dialer{Timeout: 2 * time.Second}
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
 
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -157,14 +158,20 @@ func grabBanner(ctx context.Context, ip string, port int) string {
 	}
 	defer conn.Close()
 
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	reader := bufio.NewReader(conn)
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
 
-	// Читаем первые 100 байт (версию сервиса)
-	buffer := make([]byte, 100)
+	// Если это веб-порт, отправляем HTTP-запрос
+	if port == 80 || port == 8080 {
+		fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: %s\r\nUser-Agent: STARE/1.0\r\nConnection: close\r\n\r\n", ip)
+	} else if port == 443 {
+		// Для HTTPS нужно TLS-соединение (пока пропустим или используем http.Get)
+		return "HTTPS (TLS)"
+	}
+
+	reader := bufio.NewReader(conn)
+	buffer := make([]byte, 512)
 	n, _ := reader.Read(buffer)
 
-	// Чистим от непечатных символов
 	rawBanner := string(buffer[:n])
 	cleanBanner := strings.Map(func(r rune) rune {
 		if r >= 32 && r <= 126 {
@@ -173,6 +180,11 @@ func grabBanner(ctx context.Context, ip string, port int) string {
 		return -1
 	}, rawBanner)
 
+	// Берем только первую строку (например, "HTTP/1.1 200 OK" или "HTTP/1.1 301 Moved Permanently")
+	lines := strings.Split(cleanBanner, "\n")
+	if len(lines) > 0 {
+		return strings.TrimSpace(lines[0])
+	}
 	return strings.TrimSpace(cleanBanner)
 }
 
