@@ -24,6 +24,7 @@ type ScanResult struct {
 	ASN          map[string]string   `json:"asn"`
 	Artifacts    Artifacts           `json:"artifacts"`
 	Technologies []string            `json:"technologies"`
+	Observations []Observation       `json:"observations,omitempty"`
 	Errors       []string            `json:"errors"`
 	Duration     string              `json:"duration"`
 }
@@ -55,6 +56,18 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		defer mu.Unlock()
 		result.Subdomains = append(result.Subdomains, subs...)
 	}
+
+	// Дополнительные источники (feeds) идут параллельно, ошибки изолированы per-source.
+	var wgObs sync.WaitGroup
+	wgObs.Add(1)
+	go func() {
+		defer wgObs.Done()
+		obs, errs := FetchAllSources(ctx, target)
+		mu.Lock()
+		result.Observations = append(result.Observations, obs...)
+		result.Errors = append(result.Errors, errs...)
+		mu.Unlock()
+	}()
 
 	// 1. Пассивный сбор (все источники параллельно)
 	sources := []func(context.Context, string) ([]string, error){
@@ -143,6 +156,7 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		wgBanners.Wait()
 	}
 
+	wgObs.Wait()
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 	return result
 }
