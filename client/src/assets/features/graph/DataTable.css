@@ -119,3 +119,74 @@
   margin-top: 10px !important;
   font-weight: bold;
 }
+
+/* === СЕКЦИИ ТАБЛИЦЫ === */
+.table-section {
+  margin-bottom: 28px;
+}
+
+.table-title {
+  margin: 0 0 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #ccc;
+  border-left: 2px solid #00e5ff;
+  padding-left: 8px;
+}
+
+.table-title span {
+  color: #666;
+  font-weight: normal;
+  font-size: 11px;
+}
+
+/* === НАБЛЮДЕНИЯ (THREAT INTEL) === */
+.obs-source {
+  color: #ffcc66 !important;
+}
+
+.obs-summary {
+  color: #999 !important;
+  font-size: 12px;
+}
+
+.obs-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.obs-badge.threat { color: #ffb3c1; border-color: #ff003c; background: #2a0008; }
+.obs-badge.vuln { color: #ffb3ff; border-color: #ff00ff; background: #220022; }
+.obs-badge.reputation { color: #ffe680; border-color: #ffd400; background: #2a2400; }
+.obs-badge.service { color: #a0ffd6; border-color: #00ff9d; background: #002218; }
+.obs-badge.info { color: #b3ccff; border-color: #6aa9ff; background: #0a1730; }
+
+.confidence {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.confidence-high { color: #00ff41; }
+.confidence-medium { color: #ffd400; }
+.confidence-low { color: #ff003c; }
+
+.obs-json {
+  margin: 12px 0 0;
+  padding: 10px;
+  max-height: 320px;
+  overflow: auto;
+  background: #050505;
+  border: 1px solid #222;
+  color: #b3ccff;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
