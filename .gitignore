@@ -1,0 +1,9 @@
+# Local secrets
+.env
+server/.env
+.env.local
+
+# Build artifacts
+server/stare-api
+server/stare-cli
+*.test

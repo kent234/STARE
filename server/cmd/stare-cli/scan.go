@@ -44,6 +44,7 @@ type ScanResult struct {
 	Whois            map[string]string           `json:"whois"`
 	Artifacts        scanner.Artifacts           `json:"artifacts"`
 	Technologies     []string                    `json:"technologies"`
+	Observations     []scanner.Observation       `json:"observations,omitempty"`
 	Vulnerabilities  []scanner.NucleiFinding     `json:"vulnerabilities"`
 	ASN              map[string]string           `json:"asn"`
 	SubdomainDetails map[string]*SubdomainReport `json:"subdomain_details,omitempty"`
@@ -309,6 +310,15 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 		}
 	}
 
+	sp := NewSpinner("Querying threat intelligence sources...")
+	obs, errs := scanner.FetchAllSources(ctx, target)
+	sp.Stop()
+	result.Observations = obs
+	result.Errors = append(result.Errors, errs...)
+	if len(obs) > 0 {
+		LogSuccess(fmt.Sprintf("Threat intel: %d observations", len(obs)))
+	}
+
 	result.DurationMs = time.Since(start).Milliseconds()
 	return result
 }
@@ -369,6 +379,17 @@ func printResults(r *ScanResult) {
 		fmt.Println(colorize("\n  [!] VULNERABILITIES (Nuclei):", brightRed))
 		for _, v := range r.Vulnerabilities {
 			fmt.Printf("      ├── [%s] %s (%s)\n", strings.ToUpper(v.Severity), v.Name, v.MatchedAt)
+		}
+	}
+
+	if len(r.Observations) > 0 {
+		fmt.Println(colorize("\n  [+] THREAT INTEL:", brightWhite))
+		counts := map[string]int{}
+		for _, o := range r.Observations {
+			counts[o.Source]++
+		}
+		for src, n := range counts {
+			fmt.Printf("      ├── %s: %d observations\n", src, n)
 		}
 	}
 
