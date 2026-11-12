@@ -35,6 +35,14 @@ services:
       - DB_PASSWORD=starepass
       - DB_NAME=staredb
       - REDIS_HOST=redis
+      - SHODAN_API_KEY=${SHODAN_API_KEY:-}
+      - GREYNOISE_API_KEY=${GREYNOISE_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+      - ABUSECH_AUTH_KEY=${ABUSECH_AUTH_KEY:-}
+      - IPINFO_TOKEN=${IPINFO_TOKEN:-}
+      - STARE_DISABLE_FEEDS=${STARE_DISABLE_FEEDS:-0}
+      - STARE_DISABLE_ENRICH=${STARE_DISABLE_ENRICH:-0}
+      - STARE_DISABLE_INTEL=${STARE_DISABLE_INTEL:-0}
     depends_on:
       - postgres
       - redis

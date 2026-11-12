@@ -69,6 +69,7 @@
 ### 1. Запуск Бэкенда (Go)
 ```bash
 cd server
+set -a && . ../.env && set +a   # ключи источников из корневого .env
 go mod tidy
 go run ./cmd/stare-api/main.go
 ```
@@ -82,6 +83,19 @@ npm install
 npm run dev
 ```
 *(Клиент запустится на `http://localhost:5173`)*
+
+### 3. API-ключи и проверка источников
+Скопируйте шаблон и заполните ключи (пустой ключ = источник пропускается):
+```bash
+cp .env.example .env
+```
+Проверить, какие источники реально подключились и отвечают:
+```bash
+cd server
+set -a && . ../.env && set +a
+go run ./cmd/stare-diag -target example.com
+```
+Диагностика печатает список зарегистрированных источников, число наблюдений по каждому и ошибки. URLhaus/ThreatFox требуют бесплатный `ABUSECH_AUTH_KEY` с https://auth.abuse.ch/.
 
 ---
 
