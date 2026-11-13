@@ -1,0 +1,7 @@
+# Override: лёгкий backend без внешних human-OSINT CLI/Nuclei.
+# docker compose -f docker-compose.yml -f docker-compose.lite.yml up -d --build backend
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile

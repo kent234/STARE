@@ -1,0 +1,87 @@
+# Полный OSINT-образ: Go-бэкенд + внешние human-OSINT CLI + Nuclei.
+# Использование:
+#   docker compose -f docker-compose.yml -f docker-compose.osint.yml up -d --build backend
+
+FROM golang:1.27.3-alpine AS builder
+
+WORKDIR /app
+ENV GOPROXY=https://goproxy.ru,direct
+ENV GOSUMDB=off
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o stare-api ./cmd/stare-api/main.go
+
+FROM debian:bookworm-slim
+
+ARG TARGETARCH
+ARG NUCLEI_VERSION=3.11.1
+ARG PHONEINFOGA_VERSION=2.11.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl unzip tar git python3 python3-venv python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python human-OSINT tools in an isolated venv.
+RUN python3 -m venv /opt/osint \
+ && /opt/osint/bin/pip install --no-cache-dir --upgrade pip \
+ && /opt/osint/bin/pip install --no-cache-dir \
+      sherlock-project maigret holehe ghunt phonenumbers \
+ && ln -sf /opt/osint/bin/sherlock /usr/local/bin/sherlock \
+ && ln -sf /opt/osint/bin/maigret /usr/local/bin/maigret \
+ && ln -sf /opt/osint/bin/holehe /usr/local/bin/holehe \
+ && ln -sf /opt/osint/bin/ghunt /usr/local/bin/ghunt
+
+# Blackbird (GitHub only).
+RUN git clone --depth 1 https://github.com/p1ngul1n0/blackbird /opt/blackbird \
+ && mkdir -p /opt/blackbird/data \
+ && curl -fsSL --retry 3 -o /opt/blackbird/data/wmn-data.json \
+      "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json" \
+ && /opt/osint/bin/pip install --no-cache-dir -r /opt/blackbird/requirements.txt \
+ && printf '#!/bin/sh\nexec /opt/osint/bin/python /opt/blackbird/blackbird.py "$@"\n' > /usr/local/bin/blackbird \
+ && chmod +x /usr/local/bin/blackbird
+
+# PhoneInfoga (static release).
+RUN case "${TARGETARCH:-$(uname -m)}" in \
+      amd64|x86_64) parch=x86_64 ;; \
+      arm64|aarch64) parch=arm64 ;; \
+      *) echo "unsupported architecture: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSL --retry 3 -o /tmp/phoneinfoga.tar.gz \
+      "https://github.com/sundowndev/phoneinfoga/releases/download/v${PHONEINFOGA_VERSION}/phoneinfoga_Linux_${parch}.tar.gz" \
+ && tar -xzf /tmp/phoneinfoga.tar.gz -C /usr/local/bin phoneinfoga \
+ && chmod +x /usr/local/bin/phoneinfoga \
+ && rm -f /tmp/phoneinfoga.tar.gz
+
+# Nuclei + official templates.
+RUN case "${TARGETARCH:-$(uname -m)}" in \
+      amd64|x86_64) narch=amd64 ;; \
+      arm64|aarch64) narch=arm64 ;; \
+      *) echo "unsupported architecture: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSL --retry 3 -o /tmp/nuclei.zip \
+      "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${narch}.zip" \
+ && unzip -q /tmp/nuclei.zip nuclei -d /usr/local/bin \
+ && chmod +x /usr/local/bin/nuclei \
+ && rm -f /tmp/nuclei.zip \
+ && nuclei -update-templates
+
+ENV PATH="/opt/osint/bin:${PATH}" \
+    SHERLOCK_BIN=/usr/local/bin/sherlock \
+    MAIGRET_BIN=/usr/local/bin/maigret \
+    BLACKBIRD_BIN=/usr/local/bin/blackbird \
+    BLACKBIRD_DIR=/opt/blackbird \
+    HOLEHE_BIN=/usr/local/bin/holehe \
+    GHUNT_BIN=/usr/local/bin/ghunt \
+    PHONEINFOGA_BIN=/usr/local/bin/phoneinfoga \
+    NUCLEI_BINARY=/usr/local/bin/nuclei \
+    NUCLEI_TEMPLATES=/root/nuclei-templates \
+    NUCLEI_SEVERITY=critical,high \
+    NUCLEI_TIMEOUT=5m
+
+WORKDIR /app
+COPY --from=builder /app/stare-api .
+
+EXPOSE 8080
+CMD ["./stare-api"]

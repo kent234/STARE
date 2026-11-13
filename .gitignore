@@ -2,6 +2,7 @@
 .env
 server/.env
 .env.local
+secrets/
 
 # Build artifacts
 server/stare-api
