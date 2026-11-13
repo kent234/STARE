@@ -15,6 +15,17 @@
   text-align: right;
 }
 
+.people-empty {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #ffd400;
+  background: #2a2400;
+  color: #ffe680;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .terminal-table {
   width: 100%;
   border-collapse: collapse;
@@ -177,8 +188,7 @@
 .confidence-low { color: #ff003c; }
 
 .obs-json {
-  margin: 12px 0 0;
-  padding: 10px;
+  margin: 12px 0 0;  padding: 10px;
   max-height: 320px;
   overflow: auto;
   background: #050505;
@@ -190,3 +200,25 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* === NUCLEI VULNERABILITIES === */
+.vuln-name {
+  color: #ffb3ff !important;
+  font-weight: bold;
+}
+
+.sev-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.sev-critical { color: #ff003c; border-color: #ff003c; background: #2a0008; }
+.sev-high { color: #ff8800; border-color: #ff8800; background: #2a1400; }
+.sev-medium { color: #ffd400; border-color: #ffd400; background: #2a2400; }
+.sev-low { color: #00e5ff; border-color: #00e5ff; background: #001a22; }
+.sev-info, .sev-unknown { color: #aaa; border-color: #555; background: #111; }
