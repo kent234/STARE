@@ -1,0 +1,7 @@
+# Override: backend с полным набором human-OSINT CLI.
+# docker compose -f docker-compose.yml -f docker-compose.osint.yml up -d --build backend
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.osint

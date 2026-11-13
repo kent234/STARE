@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"stare/server/people"
 	"stare/server/scanner"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -30,7 +33,7 @@ type AuthRequest struct {
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -89,7 +92,7 @@ func scanHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&req)
 	log.Printf("[API] Scan started: %s", req.Target)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
 	cachedData, err := rdb.Get(ctx, "scan:"+req.Target).Result()
@@ -136,6 +139,75 @@ func getScanHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(resultJSON))
 }
 
+func peopleHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ScanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+	if req.Target == "" {
+		http.Error(w, "Missing target", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+	defer cancel()
+
+	var result people.Result
+	if os.Getenv("PEOPLE_FIXTURE") == "1" {
+		result = people.Fixture(req.Target)
+	} else {
+		result = people.Run(ctx, req.Target)
+	}
+	if result.InputType == "" {
+		http.Error(w, "Cannot detect input type", http.StatusBadRequest)
+		return
+	}
+
+	payload, err := json.Marshal(result)
+	if err != nil {
+		http.Error(w, "Encode failed", http.StatusInternalServerError)
+		return
+	}
+	if db != nil {
+		_, _ = db.Exec(ctx, "INSERT INTO scans (target, result) VALUES ($1, $2)", req.Target, payload)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(payload)
+}
+
+func deleteScanHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing id", http.StatusBadRequest)
+		return
+	}
+
+	var target string
+	err := db.QueryRow(r.Context(), "DELETE FROM scans WHERE id = $1 RETURNING target", id).Scan(&target)
+	if errors.Is(err, pgx.ErrNoRows) {
+		http.Error(w, "Scan not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Delete failed", http.StatusInternalServerError)
+		return
+	}
+	if target != "" {
+		rdb.Del(r.Context(), "scan:"+target)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func main() {
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:5432/%s",
 		os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_HOST"), os.Getenv("DB_NAME"))
@@ -145,6 +217,8 @@ func main() {
 	http.HandleFunc("/api/scan", corsMiddleware(scanHandler))
 	http.HandleFunc("/api/scans", corsMiddleware(listScansHandler))
 	http.HandleFunc("/api/scan/get", corsMiddleware(getScanHandler))
+	http.HandleFunc("/api/scan/delete", corsMiddleware(deleteScanHandler))
+	http.HandleFunc("/api/people", corsMiddleware(peopleHandler))
 	http.HandleFunc("/api/auth/register", corsMiddleware(registerHandler))
 	http.HandleFunc("/api/auth/login", corsMiddleware(loginHandler))
 

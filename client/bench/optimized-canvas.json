@@ -1,0 +1,19 @@
+{
+  "initMs": 2116,
+  "nodes": 5505,
+  "edges": 6502,
+  "domNodes": 50,
+  "canvas": {
+    "width": 1600,
+    "height": 900
+  },
+  "renderer": "canvas",
+  "idleFps": 45,
+  "lastFilterMs": 318,
+  "fullDragFps": 12,
+  "noEdgesDragFps": 7,
+  "defaultVisibleNodes": 121,
+  "defaultVisibleEdges": 120,
+  "defaultDragFps": 44,
+  "fullFilterMs": 105
+}

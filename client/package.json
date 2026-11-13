@@ -7,17 +7,23 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:graph": "playwright test tests/graph-ui.spec.js",
+    "bench:graph": "BENCH_OUT=optimized.json playwright test tests/graph.spec.js",
+    "test:people": "playwright test tests/people.spec.js",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "ascii-globe": "^0.5.0",
     "cytoscape": "^3.34.4",
+    "cytoscape-fcose": "^2.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.186.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",

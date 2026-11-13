@@ -128,6 +128,10 @@
 }
 
 .history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   padding: 8px;
   border: 1px solid #333;
   background: #0a0a0a;
@@ -137,6 +141,26 @@
 .history-item:hover {
   border-color: #fff;
   background: #1a1a1a;
+}
+.history-info {
+  min-width: 0;
+  flex: 1;
+}
+.history-delete {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid #442222;
+  color: #ff003c;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  padding: 3px 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.history-delete:hover {
+  border-color: #ff003c;
+  background: #2a0008;
+  text-shadow: 0 0 5px rgba(255, 0, 60, 0.6);
 }
 .history-target {
   color: #00e5ff;

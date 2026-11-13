@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import LoginScreen from './assets/pages/LoginScreen/LoginScreen';
 import StartScreen from './assets/pages/StartScreen/StartScreen';
 import MainScreen from './assets/pages/MainScreen/MainScreen';
+import GraphVisualizer from './assets/features/graph/GraphVisualizer';
+import { buildBenchData } from './assets/features/graph/benchData';
 import './App.css';
 
 const BOOT_MESSAGES = [
@@ -77,6 +79,19 @@ function App() {
         </div>
       </div>
     );
+  }
+
+  // Dev-only benchmark: /?bench=5000
+  if (import.meta.env.DEV) {
+    const bench = new URLSearchParams(window.location.search).get('bench');
+    if (bench) {
+      const n = Math.max(100, parseInt(bench, 10) || 5000);
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: '#050505' }}>
+          <GraphVisualizer data={buildBenchData(n)} />
+        </div>
+      );
+    }
   }
 
   if (!token) return <LoginScreen onLogin={handleLogin} />;

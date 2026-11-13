@@ -126,6 +126,10 @@ func (s *abuseIPDBSource) checkIP(ctx context.Context, ip string) (*abuseIPDBDat
 	return &out.Data, nil
 }
 
+func (s *abuseIPDBSource) FetchBatch(ctx context.Context, targets []string) ([]Observation, error) {
+	return fetchBatch(ctx, s, targets)
+}
+
 // NewAbuseIPDBSource создаёт источник AbuseIPDB (ABUSEIPDB_API_KEY обязателен).
 func NewAbuseIPDBSource() Source {
 	return &abuseIPDBSource{

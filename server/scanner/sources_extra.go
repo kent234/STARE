@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -55,6 +56,9 @@ func FetchAlienVaultOTX(ctx context.Context, domain string) ([]string, error) {
 	url := fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/domain/%s/passive_dns", domain)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
+	if key := os.Getenv("OTX_API_KEY"); key != "" {
+		req.Header.Set("X-OTX-API-KEY", key)
+	}
 
 	client := &http.Client{Timeout: 25 * time.Second}
 	resp, err := client.Do(req)
@@ -63,6 +67,10 @@ func FetchAlienVaultOTX(ctx context.Context, domain string) ([]string, error) {
 	}
 	defer resp.Body.Close()
 
+	// Анонимный доступ к OTX ограничен (429) — не считаем это ошибкой скана.
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("otx status: %d", resp.StatusCode)
 	}

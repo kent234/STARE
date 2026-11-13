@@ -174,3 +174,134 @@
   border: 1px solid #555;
   border-radius: 2px;
 }
+
+/* === TOOLBAR / FILTERS === */
+.graph-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(5, 5, 5, 0.9);
+  border: 1px solid #222;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.graph-search {
+  width: 300px;
+  max-width: 40vw;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  color: #ddd;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 6px 8px;
+  outline: none;
+}
+.graph-search:focus {
+  border-color: #00e5ff;
+}
+
+.graph-toolbar-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #aaa;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.graph-toolbar-btn:hover,
+.graph-toolbar-btn.active {
+  border-color: #00e5ff;
+  color: #00e5ff;
+}
+
+.renderer-badge {
+  font-size: 9px;
+  padding: 2px 5px;
+  border: 1px solid #444;
+  color: #888;
+  letter-spacing: 0.5px;
+}
+.renderer-badge.webgl {
+  border-color: #00ff9d;
+  color: #00ff9d;
+}
+
+.graph-stats {
+  font-size: 9px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.filters-panel {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 29;
+  width: 420px;
+  max-width: 80vw;
+  padding: 10px 12px;
+  background: rgba(8, 8, 8, 0.97);
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #bbb;
+}
+
+.filters-title {
+  color: #00e5ff;
+  font-size: 10px;
+  letter-spacing: 1px;
+  margin: 6px 0 4px;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 10px;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+.filter-item input {
+  accent-color: #00e5ff;
+}
+
+/* === MINIMAP === */
+.graph-minimap {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 20;
+  width: 180px;
+  height: 120px;
+  border: 1px solid #333;
+  background: rgba(5, 5, 5, 0.9);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Легенду уводим вниз, чтобы не пересекалась с toolbar */
+.graph-legend {
+  top: auto;
+  bottom: 10px;
+}
+
+/* Панель деталей не должна перекрывать minimap */
+.node-details-panel {
+  z-index: 60;
+}
