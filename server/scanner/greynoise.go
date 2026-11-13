@@ -128,7 +128,11 @@ func (s *greynoiseSource) lookupIP(ctx context.Context, ip string) (*greynoiseRe
 	return &out, nil
 }
 
-// NewGreyNoiseSource создаёт источник GreyNoise (GREYNOISE_API_KEY обязателен).
+func (s *greynoiseSource) FetchBatch(ctx context.Context, targets []string) ([]Observation, error) {
+	return fetchBatch(ctx, s, targets)
+}
+
+// NewGreyNoiseSource создаёт источник GreyNoise (GREYNOISE_API_KEY опционален).
 func NewGreyNoiseSource() Source {
 	return &greynoiseSource{
 		apiKey:  os.Getenv("GREYNOISE_API_KEY"),

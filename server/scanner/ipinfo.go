@@ -129,6 +129,10 @@ func (s *ipinfoSource) lookupIP(ctx context.Context, ip string) (*ipinfoResponse
 	return &out, nil
 }
 
+func (s *ipinfoSource) FetchBatch(ctx context.Context, targets []string) ([]Observation, error) {
+	return fetchBatch(ctx, s, targets)
+}
+
 func parseOrg(org string) (asn, name string) {
 	org = strings.TrimSpace(org)
 	if !strings.HasPrefix(strings.ToUpper(org), "AS") {

@@ -135,8 +135,6 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 					{"TLSCC", scanner.FetchTLSCC},
 					{"HackerTarget", scanner.FetchHackerTarget},
 					{"AlienVault OTX", scanner.FetchAlienVaultOTX},
-					{"AnubisDB", scanner.FetchAnubisDB},
-					{"ThreatMiner", scanner.FetchThreatMiner},
 					{"URLScan.io", scanner.FetchURLScan},
 				}
 
@@ -311,7 +309,7 @@ func runScan(ctx context.Context, target string, mods []ModuleID) *ScanResult {
 	}
 
 	sp := NewSpinner("Querying threat intelligence sources...")
-	obs, errs := scanner.FetchAllSources(ctx, target)
+	obs, errs := scanner.FetchAllSources(ctx, target, result.IPs...)
 	sp.Stop()
 	result.Observations = obs
 	result.Errors = append(result.Errors, errs...)

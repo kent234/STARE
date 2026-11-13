@@ -130,6 +130,10 @@ func (s *shodanSource) lookupHost(ctx context.Context, ip string) (*shodanHost, 
 	return &out, nil
 }
 
+func (s *shodanSource) FetchBatch(ctx context.Context, targets []string) ([]Observation, error) {
+	return fetchBatch(ctx, s, targets)
+}
+
 // NewShodanSource создаёт источник Shodan (SHODAN_API_KEY обязателен).
 func NewShodanSource() Source {
 	return &shodanSource{

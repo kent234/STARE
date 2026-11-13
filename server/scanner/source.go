@@ -35,6 +35,12 @@ type Source interface {
 	Fetch(ctx context.Context, target string) ([]Observation, error)
 }
 
+// BatchSource — источник, умеющий обогащать сразу несколько целей (например, все IP скана).
+type BatchSource interface {
+	Source
+	FetchBatch(ctx context.Context, targets []string) ([]Observation, error)
+}
+
 var (
 	registryMu sync.RWMutex
 	registry   []Source
@@ -57,10 +63,23 @@ func RegisteredSources() []Source {
 }
 
 // FetchAllSources опрашивает все источники параллельно, изолируя ошибки per-source.
-func FetchAllSources(ctx context.Context, target string) ([]Observation, []string) {
+// extra — дополнительные индикаторы (например, все найденные IP); batch-источники
+// обогащают их, обычные источники по-прежнему работают по основному target.
+func FetchAllSources(ctx context.Context, target string, extra ...string) ([]Observation, []string) {
 	srcs := RegisteredSources()
 	if len(srcs) == 0 {
 		return nil, nil
+	}
+
+	batchTargets := make([]string, 0, len(extra))
+	for _, t := range extra {
+		if ip := net.ParseIP(normalizeIndicator(t)); ip != nil && !isPublicIP(ip) {
+			continue
+		}
+		batchTargets = append(batchTargets, t)
+	}
+	if len(batchTargets) == 0 {
+		batchTargets = []string{target}
 	}
 
 	var (
@@ -73,7 +92,15 @@ func FetchAllSources(ctx context.Context, target string) ([]Observation, []strin
 		wg.Add(1)
 		go func(s Source) {
 			defer wg.Done()
-			o, err := s.Fetch(ctx, target)
+			var (
+				o   []Observation
+				err error
+			)
+			if bs, ok := s.(BatchSource); ok {
+				o, err = bs.FetchBatch(ctx, batchTargets)
+			} else {
+				o, err = s.Fetch(ctx, target)
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -85,6 +112,51 @@ func FetchAllSources(ctx context.Context, target string) ([]Observation, []strin
 	}
 	wg.Wait()
 	return obs, errs
+}
+
+func isPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	return !(ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified())
+}
+
+// fetchBatch последовательно обогащает targets через обычный Fetch источника,
+// дедуплицируя индикаторы и не прерываясь на ошибке одного из них.
+func fetchBatch(ctx context.Context, s Source, targets []string) ([]Observation, error) {
+	seen := make(map[string]struct{}, len(targets))
+	var (
+		out     []Observation
+		lastErr error
+	)
+	for _, target := range targets {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			continue
+		}
+		if _, ok := seen[target]; ok {
+			continue
+		}
+		seen[target] = struct{}{}
+
+		if err := ctx.Err(); err != nil {
+			if lastErr == nil {
+				lastErr = err
+			}
+			break
+		}
+		observations, err := s.Fetch(ctx, target)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		out = append(out, observations...)
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return out, nil
 }
 
 // rateLimiter — минимальный token bucket без внешних зависимостей.

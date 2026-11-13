@@ -1,3 +1,5 @@
+//go:build nuclei
+
 package scanner
 
 import (
@@ -21,15 +23,18 @@ func RunNuclei(ctx context.Context, target string) ([]NucleiFinding, error) {
 	var findings []NucleiFinding
 	var mu sync.Mutex
 
-	ne, err := nuclei.NewNucleiEngineCtx(
-		ctx, // Передаем контекст сюда
+	opts := []nuclei.NucleiEngineOption{
 		nuclei.WithTemplateFilters(nuclei.TemplateFilters{
-			Severity: "critical,high",
+			Severity: envOr("NUCLEI_SEVERITY", "critical,high"),
 		}),
-		nuclei.WithTemplatesOrWorkflows(nuclei.TemplateSources{
-			Templates: []string{"C:\\Users\\dyach\\nuclei-templates"},
-		}),
-	)
+	}
+	if dir := envOr("NUCLEI_TEMPLATES", ""); dir != "" {
+		opts = append(opts, nuclei.WithTemplatesOrWorkflows(nuclei.TemplateSources{
+			Templates: []string{dir},
+		}))
+	}
+
+	ne, err := nuclei.NewNucleiEngineCtx(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("nuclei engine init: %w", err)
 	}

@@ -13,20 +13,21 @@ import (
 
 // ScanResult — структура, которую мы отдадим в React
 type ScanResult struct {
-	Target       string              `json:"target"`
-	Subdomains   []string            `json:"subdomains"`
-	SubdomainIPs map[string][]string `json:"subdomain_ips"`
-	IPs          []string            `json:"ips"`
-	Ports        map[string][]int    `json:"ports"`
-	Banners      map[string]string   `json:"banners"` // НОВОЕ: Баннеры сервисов
-	DNS          ExtendedDNS         `json:"dns"`
-	Whois        map[string]string   `json:"whois"`
-	ASN          map[string]string   `json:"asn"`
-	Artifacts    Artifacts           `json:"artifacts"`
-	Technologies []string            `json:"technologies"`
-	Observations []Observation       `json:"observations,omitempty"`
-	Errors       []string            `json:"errors"`
-	Duration     string              `json:"duration"`
+	Target          string              `json:"target"`
+	Subdomains      []string            `json:"subdomains"`
+	SubdomainIPs    map[string][]string `json:"subdomain_ips"`
+	IPs             []string            `json:"ips"`
+	Ports           map[string][]int    `json:"ports"`
+	Banners         map[string]string   `json:"banners"` // НОВОЕ: Баннеры сервисов
+	DNS             ExtendedDNS         `json:"dns"`
+	Whois           map[string]string   `json:"whois"`
+	ASN             map[string]string   `json:"asn"`
+	Artifacts       Artifacts           `json:"artifacts"`
+	Technologies    []string            `json:"technologies"`
+	Observations    []Observation       `json:"observations,omitempty"`
+	Vulnerabilities []NucleiFinding     `json:"vulnerabilities,omitempty"`
+	Errors          []string            `json:"errors"`
+	Duration        string              `json:"duration"`
 }
 
 // RunFullScan — выполняет полный цикл разведки и возвращает результат
@@ -57,23 +58,31 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		result.Subdomains = append(result.Subdomains, subs...)
 	}
 
-	// Дополнительные источники (feeds) идут параллельно, ошибки изолированы per-source.
-	var wgObs sync.WaitGroup
-	wgObs.Add(1)
+	// Nuclei: только для доменов, с отдельным таймаутом и изоляцией ошибок.
+	var wgNuclei sync.WaitGroup
+	wgNuclei.Add(1)
 	go func() {
-		defer wgObs.Done()
-		obs, errs := FetchAllSources(ctx, target)
+		defer wgNuclei.Done()
+		if net.ParseIP(target) != nil {
+			return
+		}
+		nctx, cancel := context.WithTimeout(ctx, nucleiTimeout())
+		defer cancel()
+		findings, err := RunNuclei(nctx, target)
 		mu.Lock()
-		result.Observations = append(result.Observations, obs...)
-		result.Errors = append(result.Errors, errs...)
-		mu.Unlock()
+		defer mu.Unlock()
+		if err != nil {
+			result.Errors = append(result.Errors, "nuclei: "+err.Error())
+			return
+		}
+		result.Vulnerabilities = findings
 	}()
 
 	// 1. Пассивный сбор (все источники параллельно)
 	sources := []func(context.Context, string) ([]string, error){
 		func(c context.Context, d string) ([]string, error) { return NewCRTShClient().FetchSubdomains(c, d) },
 		FetchCRTName, FetchRapidDNS, FetchHackerTarget,
-		FetchAlienVaultOTX, FetchAnubisDB, FetchThreatMiner, FetchURLScan, FetchTLSCC,
+		FetchAlienVaultOTX, FetchURLScan, FetchTLSCC,
 	}
 
 	for _, fn := range sources {
@@ -119,13 +128,48 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	resolved, _ := dns.Resolve(ctx, target)
 	ips = append(ips, resolved...)
 
+	// Резолвим поддомены параллельно: последовательный обход на больших зонах
+	// съедал минуты и не оставлял времени на обогащение/Nuclei.
+	var (
+		dnsWG  sync.WaitGroup
+		dnsSem = make(chan struct{}, 20)
+	)
 	for _, sub := range result.Subdomains {
-		if subIPs, err := dns.Resolve(ctx, sub); err == nil && len(subIPs) > 0 {
+		sub := sub
+		dnsWG.Add(1)
+		dnsSem <- struct{}{}
+		go func() {
+			defer dnsWG.Done()
+			defer func() { <-dnsSem }()
+			subIPs, err := dns.Resolve(ctx, sub)
+			if err != nil || len(subIPs) == 0 {
+				return
+			}
+			mu.Lock()
 			ips = append(ips, subIPs...)
 			result.SubdomainIPs[sub] = subIPs
-		}
+			mu.Unlock()
+		}()
 	}
+	dnsWG.Wait()
 	result.IPs = uniqueSorted(ips)
+
+	// Дополнительные источники: обычные — по домену, batch-источники — по всем IP.
+	// Запускаются после DNS, параллельно с ASN/портами; ошибки изолированы per-source.
+	obsTargets := append([]string{}, result.IPs...)
+	if net.ParseIP(target) != nil {
+		obsTargets = append(obsTargets, target)
+	}
+	var wgObs sync.WaitGroup
+	wgObs.Add(1)
+	go func() {
+		defer wgObs.Done()
+		obs, errs := FetchAllSources(ctx, target, obsTargets...)
+		mu.Lock()
+		result.Observations = append(result.Observations, obs...)
+		result.Errors = append(result.Errors, errs...)
+		mu.Unlock()
+	}()
 
 	// 4. ASN
 	for _, ip := range result.IPs {
@@ -157,8 +201,17 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	}
 
 	wgObs.Wait()
+	wgNuclei.Wait()
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 	return result
+}
+
+// nucleiTimeout — таймаут запуска Nuclei (NUCLEI_TIMEOUT, по умолчанию 5m).
+func nucleiTimeout() time.Duration {
+	if d, err := time.ParseDuration(envOr("NUCLEI_TIMEOUT", "5m")); err == nil && d > 0 {
+		return d
+	}
+	return 5 * time.Minute
 }
 
 // Встроенная функция для быстрого получения баннера
