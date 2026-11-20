@@ -201,6 +201,20 @@ GitLab CI (`.gitlab-ci.yml`) выполняет:
 
 Для деплоя задайте CI/CD variables: `SSH_PRIVATE_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`.
 
+### GitLab Runner
+
+Если у проекта нет активного runner, он поднимается локально в Docker:
+
+1. GitLab → проект `stare` → **Settings → CI/CD → Runners → New project runner**.
+2. Скопируйте токен `glrt-...`.
+3. Запустите:
+   ```bash
+   RUNNER_TOKEN="glrt-..." ./scripts/register-gitlab-runner.sh
+   ```
+4. Проверьте: https://vcs.uni-dubna.ru/DAAG.24/stare/-/settings/ci_cd
+
+Runner использует Docker executor, `privileged=true` (нужно для docker-in-docker в package jobs), `run_untagged=true`, теги `docker,stare`. Конфиг хранится в `secrets/gitlab-runner/config.toml` (gitignored).
+
 ## 📁 Структура проекта
 
 ```text

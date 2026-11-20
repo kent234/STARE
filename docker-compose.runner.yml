@@ -1,0 +1,8 @@
+services:
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: stare_gitlab_runner
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./secrets/gitlab-runner:/etc/gitlab-runner
