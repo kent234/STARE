@@ -45,6 +45,11 @@ func ParseProfileURL(raw string) (platform, handle string, ok bool) {
 		return "", "", false
 	}
 	parts := strings.Split(path, "/")
+	for _, part := range parts[:len(parts)-1] {
+		if isReservedPath(part) {
+			return "", "", false
+		}
+	}
 	handle = strings.TrimPrefix(parts[len(parts)-1], "@")
 	if strings.HasSuffix(strings.ToLower(handle), ".php") {
 		handle = u.Query().Get("id")

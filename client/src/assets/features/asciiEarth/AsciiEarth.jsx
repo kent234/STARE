@@ -4,7 +4,6 @@ import './AsciiEarth.css';
 
 function AsciiEarth() {
   const [globeText, setGlobeText] = useState('');
-  const [rotation, setRotation] = useState(0);
 
   useEffect(() => {
     const globe = new Globe({

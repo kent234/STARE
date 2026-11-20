@@ -1,8 +1,8 @@
 package scanner
 
 import (
-	"strings"
 	"golang.org/x/net/idna"
+	"strings"
 )
 
 func ToASCII(domain string) (string, error) {

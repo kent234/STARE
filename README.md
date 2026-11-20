@@ -127,9 +127,11 @@ export NUCLEI_TIMEOUT=5m
 Граф оптимизирован для больших сканов: `fcose`, `pixelRatio: 1`, `hideEdgesOnViewport`, упрощённые стили и progressive disclosure (1 hop). Замеры и методика — в [BENCHMARK.md](BENCHMARK.md).
 
 ```bash
-cd client
+# из корня репозитория
 npm run test:graph    # Playwright: рендер, фильтры, поиск, раскрытие соседей
+npm run test:people   # Playwright: People-OSINT
 npm run bench:graph   # FPS/layout/filter на 5 000+ узлов
+cd client && npm run test:unit   # Node unit-тесты фронтенда
 ```
 
 Рендерер: `VITE_GRAPH_RENDERER=canvas` (по умолчанию), `auto` или `webgl`; при ошибке WebGL автоматически откатывается на canvas.
@@ -169,6 +171,35 @@ docker compose -f docker-compose.yml -f docker-compose.lite.yml up -d --build ba
 ```
 
 Файл `docker-compose.osint.yml` оставлен для совместимости и указывает на тот же `Dockerfile.osint`.
+
+## Tests и CI/CD
+
+Структура тестов:
+
+```
+server/tests/              # Go: external tests (people/scanner)
+server/people/*_test.go    # Go: internal unit tests (unexported-функции)
+server/scanner/*_test.go   # Go: internal unit tests (парсеры источников)
+tests/frontend/unit/       # Node test runner (чистые JS-функции)
+tests/frontend/e2e/        # Playwright (граф, фильтры, People-OSINT)
+```
+
+Запуск:
+```bash
+cd server && go test ./... -count=1
+cd client && npm run lint && npm run test:unit && npm run build
+npm ci && npm run test:e2e        # из корня, Playwright
+```
+
+GitLab CI (`.gitlab-ci.yml`) выполняет:
+- `test:backend` — gofmt, vet, тесты + coverage;
+- `test:frontend-unit` — eslint, unit-тесты, production build;
+- `test:e2e` — Playwright в официальном образе;
+- `package:*` — сборка и пуш Docker-образов в GitLab Registry (main/tags);
+- `package:backend-osint` — полный OSINT-образ, manual;
+- `deploy:production` — manual, SSH-деплой.
+
+Для деплоя задайте CI/CD variables: `SSH_PRIVATE_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`.
 
 ## 📁 Структура проекта
 

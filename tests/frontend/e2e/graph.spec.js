@@ -57,11 +57,9 @@ test('graph benchmark 5000 nodes', async ({ page }) => {
     fullFilterMs: Math.round(filterMs),
   };
 
-  fs.mkdirSync(path.join(process.cwd(), 'bench'), { recursive: true });
-  fs.writeFileSync(
-    path.join(process.cwd(), 'bench', process.env.BENCH_OUT || 'last-run.json'),
-    JSON.stringify(result, null, 2)
-  );
+  const outFile = process.env.BENCH_OUT || 'bench/last-run.json';
+  fs.mkdirSync(path.dirname(path.resolve(outFile)), { recursive: true });
+  fs.writeFileSync(outFile, JSON.stringify(result, null, 2));
   console.log('BENCH_RESULT', JSON.stringify(result));
 
   expect(result.nodes).toBeGreaterThan(4000);
