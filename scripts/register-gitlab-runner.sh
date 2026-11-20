@@ -29,18 +29,26 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
+TOKEN_FLAG="--token"
+if [[ "$RUNNER_TOKEN" == GR* ]]; then
+  # Legacy project registration token (GR1348941...).
+  TOKEN_FLAG="--registration-token"
+fi
+
 docker exec stare_gitlab_runner gitlab-runner register \
   --non-interactive \
   --url "https://vcs.uni-dubna.ru/" \
-  --token "$RUNNER_TOKEN" \
+  "$TOKEN_FLAG" "$RUNNER_TOKEN" \
   --executor docker \
   --docker-image "alpine:3.20" \
   --docker-privileged \
+  --docker-helper-image "gitlab/gitlab-runner-helper:x86_64-v19.6.0" \
   --description "stare-local-docker" \
   --tag-list "docker,stare" \
   --run-untagged=true \
   --locked=false
 
+docker exec stare_gitlab_runner sh -c "sed -i 's/^concurrent = .*/concurrent = 3/' /etc/gitlab-runner/config.toml"
 docker restart stare_gitlab_runner >/dev/null
 sleep 2
 docker exec stare_gitlab_runner gitlab-runner verify
