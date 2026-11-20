@@ -9,6 +9,8 @@ variables:
   DOCKER_HOST: tcp://docker:2375
   DOCKER_TLS_CERTDIR: ""
   GIT_DEPTH: "20"
+  NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
+  NPM_CONFIG_REPLACE_REGISTRY_HOST: "always"
 
 default:
   interruptible: true

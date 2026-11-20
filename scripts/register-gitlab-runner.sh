@@ -43,6 +43,7 @@ docker exec stare_gitlab_runner gitlab-runner register \
   --docker-image "alpine:3.20" \
   --docker-privileged \
   --docker-helper-image "gitlab/gitlab-runner-helper:x86_64-v19.6.0" \
+  --docker-pull-policy if-not-present \
   --description "stare-local-docker" \
   --tag-list "docker,stare" \
   --run-untagged=true \
