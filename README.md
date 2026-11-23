@@ -105,7 +105,7 @@ export NUCLEI_TEMPLATES=~/nuclei-templates
 export NUCLEI_SEVERITY=critical,high
 export NUCLEI_TIMEOUT=5m
 ```
-Без бинарника скан работает, а раздел `VULNERABILITIES (NUCLEI)` в графе/таблице остаётся пустым. Docker-образ уже содержит `nuclei` v3.11.1 и официальные шаблоны (`/root/nuclei-templates`); переменные `NUCLEI_*` можно переопределить в `docker-compose.yml`/`.env`. Альтернатива — сборка с библиотекой: `go build -tags nuclei` (потребует вернуть зависимости Nuclei в `go.mod`).
+Без бинарника скан работает, а раздел `VULNERABILITIES (NUCLEI)` в графе/таблице остаётся пустым, но в `scan_meta.tools.nuclei` будет `missing` — пустота больше не маскируется под «чисто». `scan_meta.coverage` показывает attempted/succeeded/failed/skipped по DNS, HTTP, портам, TLS и Nuclei; `scan_id`/`schema_version`/`duration_ms` делают прогон аудируемым. Docker-образ уже содержит `nuclei` v3.11.1 и официальные шаблоны (`/root/nuclei-templates`); переменные `NUCLEI_*` можно переопределить в `docker-compose.yml`/`.env`. Альтернатива — сборка с библиотекой: `go build -tags nuclei` (потребует вернуть зависимости Nuclei в `go.mod`).
 
 ---
 
@@ -153,6 +153,7 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 - HTTP-верификация: 404/410 → `removed[]`, 401/403/429/login-wall → `blocked` и `low`, timeout/5xx/soft-404 → `unknown` и `low`; `confirmed` только по странице с handle в title/og:title или site-specific `e_string`.
 - `http_attempted`, `http_status`, `http_error`, `url_reachable` показывают, что именно произошло; `PEOPLE_VERIFY_MAX` ограничивает число проверок (по умолчанию 200).
 - Canonical URL выбирается по рангу: профиль > обычная страница > API; все варианты сохраняются в `evidence_urls` (например, `api.chess.com` остаётся evidence, а не ссылкой профиля).
+- Наблюдаемость: `schema_version`, `scan_id`, `duration_ms`, `collectors[]` (`ran/missing/error`, observations/kept/duration) и `versions` установленных CLI. «Не установлен» и «ничего не нашёл» различимы в JSON и UI.
 - **Maigret по умолчанию работает без лимита сайтов**; `MAIGRET_MAX_SITES=0` (или пусто) = весь список, число — ограничение для быстрого режима.
 - Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники и считает `score`. По умолчанию показываются только `existence=confirmed`; остальное — через `show low-confidence / unverified`.
 

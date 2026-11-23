@@ -9,6 +9,7 @@ import (
 
 // Fixture — детерминированные данные для тестов и PEOPLE_FIXTURE=1.
 func Fixture(target string) Result {
+	startedAt := time.Now()
 	target = strings.TrimSpace(target)
 	if target == "" {
 		target = "test"
@@ -49,8 +50,24 @@ func Fixture(target string) Result {
 	}
 
 	accounts, breaches, phone, registrations := Normalize(observations)
+	// Fixture демонстрирует интерфейс без сети: синтетические аккаунты
+	// считаются подтверждёнными, иначе default-фильтр их скроет.
+	for i := range accounts {
+		accounts[i].Existence = ExistenceConfirmed
+		accounts[i].Verification = VerificationCollector
+		if accounts[i].VerificationSource == "" {
+			accounts[i].VerificationSource = "fixture"
+		}
+		accounts[i].Verified = true
+		if accounts[i].Confidence == scanner.ConfidenceLow {
+			accounts[i].Confidence = scanner.ConfidenceMedium
+		}
+	}
 	return Result{
 		Target:        target,
+		SchemaVersion: scanner.SchemaVersion,
+		ScanID:        scanner.NewScanID(),
+		DurationMS:    time.Since(startedAt).Milliseconds(),
 		Kind:          "people",
 		InputType:     Detect(target),
 		FetchedAt:     time.Now().UTC(),

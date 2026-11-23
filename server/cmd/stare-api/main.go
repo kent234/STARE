@@ -104,6 +104,7 @@ func scanHandler(w http.ResponseWriter, r *http.Request) {
 
 	result := scanner.RunFullScan(ctx, req.Target)
 	resultJSON, _ := json.Marshal(result)
+	log.Printf("[SCAN] target=%q scan_id=%s duration=%s errors=%d", req.Target, result.ScanID, result.Duration, len(result.Errors))
 
 	_, err = db.Exec(ctx, "INSERT INTO scans (target, result) VALUES ($1, $2)", req.Target, resultJSON)
 	rdb.Set(ctx, "scan:"+req.Target, resultJSON, 10*time.Minute)
@@ -157,6 +158,7 @@ func peopleHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
 	defer cancel()
 
+	started := time.Now()
 	var result people.Result
 	if os.Getenv("PEOPLE_FIXTURE") == "1" {
 		result = people.Fixture(req.Target)
@@ -167,6 +169,9 @@ func peopleHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Cannot detect input type", http.StatusBadRequest)
 		return
 	}
+	log.Printf("[PEOPLE] target=%q type=%s scan_id=%s accounts=%d removed=%d duration=%s",
+		req.Target, result.InputType, result.ScanID, len(result.Accounts), len(result.Removed),
+		time.Since(started).Round(time.Millisecond))
 
 	payload, err := json.Marshal(result)
 	if err != nil {

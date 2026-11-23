@@ -18,7 +18,9 @@ function PeopleTable({ data }) {
   ));
   const registrations = data.registrations || [];
   const removed = data.removed || [];
-  const hasAny = accounts.length || registrations.length || removed.length
+  const collectors = data.collectors || [];
+  const versions = Object.entries(data.versions || {});
+  const hasAny = accounts.length || registrations.length || removed.length || collectors.length
     || (data.breaches || []).length || data.phone;
 
   return (
@@ -52,7 +54,11 @@ function PeopleTable({ data }) {
 
       <div className="table-section">
         <h3 className="table-title">
-          PEOPLE-OSINT <span>{data.input_type}: {data.target}</span>
+          PEOPLE-OSINT <span>
+            {data.input_type}: {data.target}
+            {data.scan_id ? ` · scan ${data.scan_id}` : ''}
+            {data.duration_ms ? ` · ${data.duration_ms} ms` : ''}
+          </span>
         </h3>
         <div className="table-hint" style={{ textAlign: 'left' }}>
           <label className="filter-item">
@@ -100,6 +106,34 @@ function PeopleTable({ data }) {
           </tbody>
         </table>
       </div>
+
+      {collectors.length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">
+            COLLECTORS <span>{collectors.length} · kept accounts {collectors.reduce((n, c) => n + (c.kept || 0), 0)}</span>
+          </h3>
+          <table className="terminal-table">
+            <thead><tr><th>COLLECTOR</th><th>STATUS</th><th>OBSERVATIONS</th><th>KEPT</th><th>DURATION</th><th>ERROR</th></tr></thead>
+            <tbody>
+              {collectors.map(item => (
+                <tr key={item.name} className="data-row">
+                  <td className="vuln-name">{item.name}</td>
+                  <td className={item.status === 'ran' ? 'safe-status' : 'risky-status'}>{item.status}</td>
+                  <td>{item.observations ?? 0}</td>
+                  <td>{item.kept ?? 0}</td>
+                  <td>{item.duration_ms ? `${item.duration_ms} ms` : '-'}</td>
+                  <td className="obs-summary">{item.error || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {versions.length > 0 && (
+            <div className="obs-summary" style={{ marginTop: '8px' }}>
+              versions: {versions.map(([name, version]) => `${name} ${version}`).join(' · ')}
+            </div>
+          )}
+        </div>
+      )}
 
       {removed.length > 0 && (
         <div className="table-section">
@@ -251,6 +285,47 @@ function DataTable({ data }) {
   return (
     <div className="table-wrapper">
       <div className="table-hint">💡 Click on any row to expand details</div>
+
+      {(data.scan_meta?.tools || data.scan_meta?.coverage) && (
+        <div className="table-section">
+          <h3 className="table-title">
+            SCAN STATUS <span>scan {data.scan_id || '-'} · schema {data.schema_version || '-'} · {data.duration}</span>
+          </h3>
+          <table className="terminal-table">
+            <thead><tr><th>TOOL</th><th>STATUS</th><th>DURATION</th><th>INPUT</th><th>ITEMS</th><th>NOTES</th></tr></thead>
+            <tbody>
+              {Object.entries(data.scan_meta?.tools || {}).map(([name, tool]) => (
+                <tr key={name} className="data-row">
+                  <td className="vuln-name">{name}</td>
+                  <td className={tool.status === 'ran' ? 'safe-status' : 'risky-status'}>{tool.status}</td>
+                  <td>{tool.duration_ms ? `${tool.duration_ms} ms` : '-'}</td>
+                  <td>{tool.input ?? '-'}</td>
+                  <td>{tool.items ?? '-'}</td>
+                  <td className="obs-summary">
+                    {tool.truncated ? 'limit hit · ' : ''}{tool.error || '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.scan_meta?.coverage && (
+            <table className="terminal-table" style={{ marginTop: '10px' }}>
+              <thead><tr><th>STAGE</th><th>ATTEMPTED</th><th>SUCCEEDED</th><th>FAILED</th><th>SKIPPED</th></tr></thead>
+              <tbody>
+                {Object.entries(data.scan_meta.coverage).map(([stage, cov]) => (
+                  <tr key={stage} className="data-row">
+                    <td className="vuln-name">{stage}</td>
+                    <td>{cov.attempted ?? 0}</td>
+                    <td className="safe-status">{cov.succeeded ?? 0}</td>
+                    <td className={cov.failed ? 'risky-status' : ''}>{cov.failed ?? 0}</td>
+                    <td>{cov.skipped ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       <div className="table-section">
         <h3 className="table-title">

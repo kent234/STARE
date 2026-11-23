@@ -131,9 +131,14 @@ type Actor struct {
 // Result — ответ /api/people и данные для графа.
 type Result struct {
 	Target        string                `json:"target"`
+	SchemaVersion string                `json:"schema_version"`
+	ScanID        string                `json:"scan_id"`
+	DurationMS    int64                 `json:"duration_ms"`
 	Kind          string                `json:"kind"`
 	InputType     Kind                  `json:"input_type"`
 	FetchedAt     time.Time             `json:"fetched_at"`
+	Collectors    []CollectorStatus     `json:"collectors,omitempty"`
+	Versions      map[string]string     `json:"versions,omitempty"`
 	Observations  []scanner.Observation `json:"observations"`
 	Accounts      []Account             `json:"accounts"`
 	Removed       []RemovedAccount      `json:"removed,omitempty"`
@@ -211,16 +216,20 @@ func isPhone(s string) bool {
 
 // Run выполняет конвейер: detect → collectors → normalize → actor.
 func Run(ctx context.Context, target string) Result {
+	startedAt := time.Now()
 	kind := Detect(target)
 	res := Result{
-		Target:    strings.TrimSpace(target),
-		Kind:      "people",
-		InputType: kind,
-		FetchedAt: time.Now().UTC(),
+		Target:        strings.TrimSpace(target),
+		SchemaVersion: scanner.SchemaVersion,
+		ScanID:        scanner.NewScanID(),
+		Kind:          "people",
+		InputType:     kind,
+		FetchedAt:     time.Now().UTC(),
 	}
 
 	if kind == "" {
 		res.Errors = append(res.Errors, "empty target")
+		res.DurationMS = time.Since(startedAt).Milliseconds()
 		return res
 	}
 
@@ -228,7 +237,9 @@ func Run(ctx context.Context, target string) Result {
 		mu           sync.Mutex
 		wg           sync.WaitGroup
 		observations []scanner.Observation
+		statuses     []CollectorStatus
 	)
+	appliedCollectors := make([]string, 0, len(collectors))
 	collectorTarget := target
 	if kind == KindProfileURL {
 		_, handle, ok := ParseProfileURL(target)
@@ -242,6 +253,21 @@ func Run(ctx context.Context, target string) Result {
 		if !collectorApplies(collector.Name(), kind) {
 			continue
 		}
+		appliedCollectors = append(appliedCollectors, collector.Name())
+
+		// Внешний CLI может отсутствовать. Это missing, а не «ничего не нашёл».
+		if envKey, binaries, required := collectorRequirement(collector.Name()); required {
+			if _, ok := lookBinary(envKey, binaries...); !ok {
+				mu.Lock()
+				statuses = append(statuses, CollectorStatus{
+					Name:   collector.Name(),
+					Status: CollectorMissing,
+				})
+				mu.Unlock()
+				continue
+			}
+		}
+
 		cTarget := collectorTarget
 		if collector.Name() == "profile" {
 			cTarget = target
@@ -249,11 +275,25 @@ func Run(ctx context.Context, target string) Result {
 		wg.Add(1)
 		go func(collector Collector, cTarget string) {
 			defer wg.Done()
+			started := time.Now()
 			cctx, cancel := context.WithTimeout(ctx, 900*time.Second)
 			obs, err := collector.Collect(cctx, cTarget)
 			cancel()
+
+			status := CollectorStatus{
+				Name:         collector.Name(),
+				Status:       CollectorRan,
+				Observations: len(obs),
+				DurationMS:   time.Since(started).Milliseconds(),
+			}
+			if err != nil {
+				status.Status = CollectorError
+				status.Error = err.Error()
+			}
+
 			mu.Lock()
 			defer mu.Unlock()
+			statuses = append(statuses, status)
 			if err != nil {
 				res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", collector.Name(), err))
 				return
@@ -262,6 +302,7 @@ func Run(ctx context.Context, target string) Result {
 		}(collector, cTarget)
 	}
 	wg.Wait()
+	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
 
 	res.Observations = observations
 	res.Email = ExtractEmailIntel(observations)
@@ -271,6 +312,18 @@ func Run(ctx context.Context, target string) Result {
 		res.Accounts = ApplyProfileMatch(ctx, target, res.Accounts)
 	}
 	res.Actor = BuildActor(target, res.Accounts)
+
+	// Kept — сколько финальных аккаунтов реально опирается на коллектор.
+	for i := range statuses {
+		for _, acc := range res.Accounts {
+			if contains(acc.Sources, statuses[i].Name) {
+				statuses[i].Kept++
+			}
+		}
+	}
+	res.Collectors = statuses
+	res.Versions = collectorVersions(appliedCollectors)
+	res.DurationMS = time.Since(startedAt).Milliseconds()
 	return res
 }
 

@@ -30,6 +30,15 @@
 | `TestNormalizeProviderIsConfirmed` | Microsoft provider observation | `provider=true`, `existence=confirmed`, без HTTP |
 | `TestCanonicalURLRanking` | профиль vs API | профиль побеждает независимо от порядка |
 
+## `meta_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestRunEmptyTargetHasMeta` | `Run("")` без сети | `schema_version`/`scan_id`/`duration_ms`, ошибка пустой цели |
+| `TestCollectorRequirement` | CLI/HTTP коллекторы | только CLI требуют бинарник, HTTP — всегда доступны |
+| `TestCollectorVersionsMissingBinary` | пустой PATH | карта версий не заполняется пустышками |
+| `TestBinaryVersion` | скрипт `tool 1.2.3` | версия из первой строки |
+
 ## `verify_test.go`
 
 | Тест | Сценарий | Ожидание |

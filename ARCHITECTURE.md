@@ -55,6 +55,13 @@ server/
 All parallel slices are sorted before output: subdomains, sources, IPs,
 observations, HTTP/TLS, vulnerabilities, buckets and errors.
 
+`RunFullScan` returns `scan_id`, `schema_version` and `scan_meta`:
+`tools` (`ran|missing|error|skipped`, duration, input/items, truncation) and
+`coverage` (attempted/succeeded/failed/skipped per stage). This makes an empty
+`vulnerabilities`/`tls` block distinguishable from “not checked”. The People
+pipeline exposes the same idea via `collectors[]`, CLI `versions`, `scan_id`
+and `duration_ms`.
+
 All external tools are optional: missing binary = source skipped, scan continues.
 Paths: `SUBFINDER_BIN`, `HTTPX_BIN`, `NAABU_BIN`, `TLSX_BIN`, `KATANA_BIN`.
 

@@ -144,8 +144,17 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
   const email = 'test@example.com';
   const emailFixture = {
     target: email,
+    schema_version: '1.1.0',
+    scan_id: 'scan-e2e-email',
+    duration_ms: 42,
     kind: 'people',
     input_type: 'email',
+    collectors: [
+      { name: 'microsoft', status: 'ran', observations: 1, kept: 1, duration_ms: 5 },
+      { name: 'holehe', status: 'ran', observations: 1, kept: 0, duration_ms: 7 },
+      { name: 'sherlock', status: 'missing', observations: 0, kept: 0 },
+    ],
+    versions: { microsoft: 'GetCredentialType' },
     fetched_at: '2026-01-01T00:00:00Z',
     observations: [],
     accounts: [
@@ -208,4 +217,7 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
   await expect(page.locator('.table-wrapper')).toContainText('confirmed');
   await expect(page.locator('.table-wrapper')).toContainText('REMOVED PROFILES');
   await expect(page.locator('.table-wrapper')).toContainText('https://github.com/gone');
+  await expect(page.locator('.table-wrapper')).toContainText('COLLECTORS');
+  await expect(page.locator('.table-wrapper')).toContainText('scan-e2e-email');
+  await expect(page.locator('.table-wrapper')).toContainText('missing');
 });

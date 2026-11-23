@@ -20,6 +20,13 @@ import (
 
 var errToolNotInstalled = errors.New("tool not installed")
 
+const (
+	// httpxMaxTargets — предел хостов на один запуск httpx.
+	httpxMaxTargets = 500
+	// katanaMaxEndpoints — предел сохраняемых URL после краулинга.
+	katanaMaxEndpoints = 2000
+)
+
 // HTTPProbe — результат httpx (живой HTTP-сервис и его атрибуты).
 type HTTPProbe struct {
 	Input        string   `json:"input"`
@@ -126,8 +133,8 @@ func RunHTTPX(ctx context.Context, targets []string) ([]HTTPProbe, error) {
 	if len(targets) == 0 {
 		return nil, nil
 	}
-	if len(targets) > 500 {
-		targets = targets[:500]
+	if len(targets) > httpxMaxTargets {
+		targets = targets[:httpxMaxTargets]
 	}
 	out, err := runPDTool(ctx, "HTTPX_BIN", "httpx", []string{
 		"-json", "-silent", "-no-color", "-status-code", "-title", "-tech-detect",

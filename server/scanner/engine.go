@@ -14,6 +14,9 @@ import (
 
 // ScanResult — структура, которую мы отдадим в React
 type ScanResult struct {
+	SchemaVersion       string              `json:"schema_version"`
+	ScanID              string              `json:"scan_id"`
+	Meta                ScanMeta            `json:"scan_meta"`
 	Target              string              `json:"target"`
 	Subdomains          []string            `json:"subdomains"`
 	SubdomainSources    map[string][]string `json:"subdomain_sources,omitempty"`
@@ -50,6 +53,9 @@ type ScanResult struct {
 func RunFullScan(ctx context.Context, target string) *ScanResult {
 	start := time.Now()
 	result := &ScanResult{
+		SchemaVersion:       SchemaVersion,
+		ScanID:              NewScanID(),
+		Meta:                newScanMeta(),
 		Target:              target,
 		Ports:               make(map[string][]int),
 		Banners:             make(map[string]string),
@@ -102,24 +108,52 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	wgNuclei.Add(1)
 	go func() {
 		defer wgNuclei.Done()
+		// Пропуск по типу цели/приватному адресу — это skipped, а не missing.
 		if net.ParseIP(target) != nil {
+			mu.Lock()
+			result.Meta.Tools["nuclei"] = ToolStatus{Status: ToolSkipped}
+			result.Meta.Coverage["nuclei"] = StageCoverage{Skipped: 1}
+			mu.Unlock()
 			return
 		}
 		if !apexSafe {
 			mu.Lock()
 			result.Errors = append(result.Errors, "nuclei: skipped: apex resolves only to non-public IPs")
+			result.Meta.Tools["nuclei"] = ToolStatus{Status: ToolSkipped}
+			result.Meta.Coverage["nuclei"] = StageCoverage{Skipped: 1}
 			mu.Unlock()
 			return
 		}
+		if _, ok := toolBinary("NUCLEI_BINARY", "nuclei"); !ok {
+			mu.Lock()
+			result.Meta.Tools["nuclei"] = ToolStatus{Status: ToolMissing}
+			result.Meta.Coverage["nuclei"] = StageCoverage{Attempted: 1, Skipped: 1}
+			mu.Unlock()
+			return
+		}
+
+		start := time.Now()
 		nctx, cancel := context.WithTimeout(ctx, nucleiTimeout())
 		defer cancel()
 		findings, err := RunNuclei(nctx, target)
+		status := ToolStatus{Status: ToolRan, DurationMS: time.Since(start).Milliseconds(), Input: 1, Items: len(findings)}
+		if err != nil {
+			status.Status = ToolError
+			status.Error = err.Error()
+		}
 		mu.Lock()
 		defer mu.Unlock()
+		result.Meta.Tools["nuclei"] = status
+		cov := result.Meta.Coverage["nuclei"]
+		cov.Attempted = 1
 		if err != nil {
+			cov.Failed = 1
 			result.Errors = append(result.Errors, "nuclei: "+err.Error())
+			result.Meta.Coverage["nuclei"] = cov
 			return
 		}
+		cov.Succeeded = 1
+		result.Meta.Coverage["nuclei"] = cov
 		result.Vulnerabilities = findings
 	}()
 
@@ -143,14 +177,46 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			subs, err := source.fn(ctx, target)
-			if err != nil {
-				mu.Lock()
-				result.Errors = append(result.Errors, source.name+": "+err.Error())
-				mu.Unlock()
-				return
+
+			// Subfinder — внешний бинарник; его отсутствие должно быть
+			// видно как missing, а не как «источник ничего не нашёл».
+			if source.name == "subfinder" {
+				if _, ok := toolBinary("SUBFINDER_BIN", "subfinder"); !ok {
+					mu.Lock()
+					result.Meta.Tools["subfinder"] = ToolStatus{Status: ToolMissing}
+					cov := result.Meta.Coverage["subdomains"]
+					cov.Skipped++
+					result.Meta.Coverage["subdomains"] = cov
+					mu.Unlock()
+					return
+				}
 			}
-			if len(subs) > 0 {
+
+			started := time.Now()
+			subs, err := source.fn(ctx, target)
+			elapsed := time.Since(started)
+
+			mu.Lock()
+			cov := result.Meta.Coverage["subdomains"]
+			cov.Attempted++
+			if source.name == "subfinder" {
+				status := ToolStatus{Status: ToolRan, DurationMS: elapsed.Milliseconds(), Input: 1, Items: len(subs)}
+				if err != nil {
+					status.Status = ToolError
+					status.Error = err.Error()
+				}
+				result.Meta.Tools["subfinder"] = status
+			}
+			if err != nil {
+				cov.Failed++
+				result.Errors = append(result.Errors, source.name+": "+err.Error())
+			} else {
+				cov.Succeeded++
+			}
+			result.Meta.Coverage["subdomains"] = cov
+			mu.Unlock()
+
+			if err == nil && len(subs) > 0 {
 				addSubdomains(source.name, subs)
 			}
 		}()
@@ -241,6 +307,21 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	publicIPs, privateIPs := splitPublicPrivateIPs(result.IPs)
 	result.PrivateIPs = privateIPs
 
+	// DNS coverage: сколько имён реально резолвится, а сколько осталось без A/AAAA.
+	dnsAttempted := len(result.Subdomains)
+	dnsSucceeded := len(result.SubdomainIPs)
+	if net.ParseIP(target) == nil {
+		dnsAttempted++
+		if len(apexIPs) > 0 {
+			dnsSucceeded++
+		}
+	}
+	result.Meta.Coverage["dns"] = StageCoverage{
+		Attempted: dnsAttempted,
+		Succeeded: dnsSucceeded,
+		Failed:    dnsAttempted - dnsSucceeded,
+	}
+
 	// Дополнительные источники: обычные — по домену, batch-источники — по всем IP.
 	// Запускаются после DNS, параллельно с ASN/портами; ошибки изолированы per-source.
 	obsTargets := append([]string{}, publicIPs...)
@@ -272,9 +353,42 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		// В httpx уходят только хосты без приватных адресов: активная
 		// проверка не должна касаться внутренней сети.
 		hosts := activeProbeTargets(target, apexIPs, result.Subdomains, result.SubdomainIPs)
+		limit := httpxMaxTargets
+		truncated := len(hosts) > limit
+		if truncated {
+			hosts = hosts[:limit]
+		}
+
+		if _, ok := toolBinary("HTTPX_BIN", "httpx"); !ok {
+			mu.Lock()
+			result.Meta.Tools["httpx"] = ToolStatus{Status: ToolMissing, Input: len(hosts)}
+			result.Meta.Coverage["http"] = StageCoverage{Attempted: len(hosts), Skipped: len(hosts)}
+			mu.Unlock()
+			return
+		}
+
+		started := time.Now()
 		probes, err := RunHTTPX(ctx, hosts)
+		status := ToolStatus{
+			Status:     ToolRan,
+			DurationMS: time.Since(started).Milliseconds(),
+			Input:      len(hosts),
+			Items:      len(probes),
+			Truncated:  truncated,
+		}
+		if err != nil {
+			status.Status = ToolError
+			status.Error = err.Error()
+		}
 		mu.Lock()
 		defer mu.Unlock()
+		result.Meta.Tools["httpx"] = status
+		cov := StageCoverage{Attempted: len(hosts), Succeeded: len(probes)}
+		if cov.Succeeded > cov.Attempted {
+			cov.Succeeded = cov.Attempted
+		}
+		cov.Failed = cov.Attempted - cov.Succeeded
+		result.Meta.Coverage["http"] = cov
 		if err != nil {
 			result.Errors = append(result.Errors, "httpx: "+err.Error())
 			return
@@ -292,16 +406,43 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		if !apexSafe {
 			mu.Lock()
 			result.Errors = append(result.Errors, "tlsx: skipped: apex resolves only to non-public IPs")
+			result.Meta.Tools["tlsx"] = ToolStatus{Status: ToolSkipped, Input: 1}
+			result.Meta.Coverage["tls"] = StageCoverage{Skipped: 1}
 			mu.Unlock()
 			return
 		}
-		certs, err := RunTLSX(ctx, target)
-		mu.Lock()
-		defer mu.Unlock()
-		if err != nil {
-			result.Errors = append(result.Errors, "tlsx: "+err.Error())
+		if _, ok := toolBinary("TLSX_BIN", "tlsx"); !ok {
+			mu.Lock()
+			result.Meta.Tools["tlsx"] = ToolStatus{Status: ToolMissing, Input: 1}
+			result.Meta.Coverage["tls"] = StageCoverage{Attempted: 1, Skipped: 1}
+			mu.Unlock()
 			return
 		}
+
+		started := time.Now()
+		certs, err := RunTLSX(ctx, target)
+		status := ToolStatus{
+			Status:     ToolRan,
+			DurationMS: time.Since(started).Milliseconds(),
+			Input:      1,
+			Items:      len(certs),
+		}
+		if err != nil {
+			status.Status = ToolError
+			status.Error = err.Error()
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		result.Meta.Tools["tlsx"] = status
+		cov := StageCoverage{Attempted: 1}
+		if err != nil {
+			cov.Failed = 1
+			result.Errors = append(result.Errors, "tlsx: "+err.Error())
+			result.Meta.Coverage["tls"] = cov
+			return
+		}
+		cov.Succeeded = 1
+		result.Meta.Coverage["tls"] = cov
 		result.TLS = certs
 	}()
 
@@ -309,17 +450,46 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	go func() {
 		defer wgActive.Done()
 		if net.ParseIP(target) != nil {
+			mu.Lock()
+			result.Meta.Tools["katana"] = ToolStatus{Status: ToolSkipped}
+			mu.Unlock()
 			return
 		}
 		if !apexSafe {
 			mu.Lock()
 			result.Errors = append(result.Errors, "katana: skipped: apex resolves only to non-public IPs")
+			result.Meta.Tools["katana"] = ToolStatus{Status: ToolSkipped}
 			mu.Unlock()
 			return
 		}
+		if _, ok := toolBinary("KATANA_BIN", "katana"); !ok {
+			mu.Lock()
+			result.Meta.Tools["katana"] = ToolStatus{Status: ToolMissing, Input: 1}
+			mu.Unlock()
+			return
+		}
+
+		started := time.Now()
 		endpoints, err := RunKatana(ctx, "https://"+target)
+		truncated := false
+		if len(endpoints) > katanaMaxEndpoints {
+			endpoints = endpoints[:katanaMaxEndpoints]
+			truncated = true
+		}
+		status := ToolStatus{
+			Status:     ToolRan,
+			DurationMS: time.Since(started).Milliseconds(),
+			Input:      1,
+			Items:      len(endpoints),
+			Truncated:  truncated,
+		}
+		if err != nil {
+			status.Status = ToolError
+			status.Error = err.Error()
+		}
 		mu.Lock()
 		defer mu.Unlock()
+		result.Meta.Tools["katana"] = status
 		if err != nil {
 			result.Errors = append(result.Errors, "katana: "+err.Error())
 			return
@@ -356,8 +526,34 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	if len(publicIPs) > 0 {
 		portsClient := NewPortsClient()
 		fallback, _ := portsClient.ScanPortsMany(ctx, publicIPs)
-		fast, _ := RunNaabu(ctx, publicIPs, 1000)
+
+		// naabu — опциональный ускоритель; fallback-скан работает всегда,
+		// но отсутствие naabu должно быть видно в scan_meta.
+		fast := map[string][]int{}
+		naabuStatus := ToolStatus{Status: ToolMissing, Input: len(publicIPs)}
+		if _, ok := toolBinary("NAABU_BIN", "naabu"); ok {
+			started := time.Now()
+			var err error
+			fast, err = RunNaabu(ctx, publicIPs, 1000)
+			naabuStatus = ToolStatus{
+				Status:     ToolRan,
+				DurationMS: time.Since(started).Milliseconds(),
+				Input:      len(publicIPs),
+				Items:      countPorts(fast),
+			}
+			if err != nil {
+				naabuStatus.Status = ToolError
+				naabuStatus.Error = err.Error()
+			}
+		}
+
 		result.Ports = mergePorts(fallback, fast)
+		cov := StageCoverage{Attempted: len(publicIPs), Succeeded: len(result.Ports)}
+		cov.Failed = cov.Attempted - cov.Succeeded
+		mu.Lock()
+		result.Meta.Tools["naabu"] = naabuStatus
+		result.Meta.Coverage["ports"] = cov
+		mu.Unlock()
 
 		var wgBanners sync.WaitGroup
 		bannerSem := make(chan struct{}, 50)
@@ -482,6 +678,15 @@ func uniqueSorted(in []string) []string {
 	// прогонами — это ломало diff и сравнение сохранённых графов.
 	sort.Strings(out)
 	return out
+}
+
+// countPorts — число открытых портов во всех IP.
+func countPorts(ports map[string][]int) int {
+	total := 0
+	for _, list := range ports {
+		total += len(list)
+	}
+	return total
 }
 
 // mergePorts объединяет результаты naabu и fallback-сканера.

@@ -151,7 +151,9 @@ function MainScreen({ onBack, onLogout }) {
     setLogs(prev => [
       ...prev,
       `[INIT] Connecting to backend API...`,
-      peopleKind ? `[PEOPLE] Input type: ${peopleKind}` : `[SCAN] Target: ${target}`,
+      peopleKind
+        ? `[PEOPLE] Input type: ${peopleKind} · target: ${target.trim()}`
+        : `[SCAN] Target: ${target.trim()}`,
     ]);
 
     try {
@@ -165,8 +167,9 @@ function MainScreen({ onBack, onLogout }) {
       if (data.kind === 'people') {
         setLogs(prev => [
           ...prev,
-          `[+] People-OSINT complete: ${data.accounts?.length || 0} accounts`,
-          `[DONE] Rendering data...`,
+          `[+] People-OSINT complete: ${data.accounts?.length || 0} accounts, `
+            + `${data.removed?.length || 0} removed in ${data.duration_ms ?? '?'} ms`,
+          `[DONE] scan_id=${data.scan_id || 'n/a'} · rendering data...`,
         ]);
       } else {
         setLogs(prev => [...prev, `[+] Scan complete in ${data.duration}`, `[DONE] Rendering data...`]);

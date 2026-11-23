@@ -36,6 +36,14 @@
 | `TestActiveProbeTargets` | публичный/приватный/смешанный/нерезолвящийся поддомен | активные проверки только без приватных адресов |
 | `TestUniqueSortedIsSorted` / `TestSortHelpersDeterministic` | неотсортированные входы | стабильный порядок между прогонами |
 
+## `meta_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestNewScanID` | два вызова | 24 hex-символа, значения различаются |
+| `TestNewScanMetaMaps` | tools/coverage | карты инициализированы, JSON содержит статусы и счётчики |
+| `TestToolStatusJSONOmitsZeroes` | `ToolStatus{ran, items:3}` | пустые duration/error не попадают в JSON |
+
 ## `source_test.go`
 
 | Тест | Сценарий | Ожидание |

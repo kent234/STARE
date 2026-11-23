@@ -768,6 +768,9 @@ function GraphVisualizer({ data }) {
           Confidence: node.confidence,
           Accounts: (node.accounts || []).length,
           Input: data.input_type,
+          ScanID: data.scan_id || 'n/a',
+          SchemaVersion: data.schema_version || 'n/a',
+          Duration: data.duration_ms ? `${data.duration_ms} ms` : 'n/a',
         };
       } else if (node.type === 'account') {
         info = {
@@ -838,6 +841,13 @@ function GraphVisualizer({ data }) {
         if (data.artifacts?.robots_txt?.length > 0) info.RobotsTxt = data.artifacts.robots_txt;
         info.Observations = observations.length;
         info.Vulnerabilities = vulnerabilities.length;
+        info.ScanID = data.scan_id || 'n/a';
+        info.SchemaVersion = data.schema_version || 'n/a';
+        if (data.scan_meta?.tools) {
+          info.Tools = Object.entries(data.scan_meta.tools)
+            .map(([name, tool]) => `${name}: ${tool.status}${tool.items ? ` (${tool.items})` : ''}`)
+            .join(', ');
+        }
         info.WildcardDNS = data.wildcard_dns ? 'yes' : 'no';
         if (data.wildcard_ips?.length > 0) info.WildcardIPs = data.wildcard_ips;
         // Приватные/bogon адреса остаются в графе, но активные проверки по ним
