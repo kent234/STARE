@@ -12,10 +12,14 @@ function PeopleTable({ data }) {
   const accounts = allAccounts.filter(acc => (
     showLow || (data.input_type === 'profile_url'
       ? (acc.match_score || 0) >= 50
-      : (acc.verified || (acc.sources || []).length >= 2))
+      : (acc.existence
+        ? acc.existence === 'confirmed'
+        : (acc.verified || (acc.sources || []).length >= 2)))
   ));
   const registrations = data.registrations || [];
-  const hasAny = accounts.length || registrations.length || (data.breaches || []).length || data.phone;
+  const removed = data.removed || [];
+  const hasAny = accounts.length || registrations.length || removed.length
+    || (data.breaches || []).length || data.phone;
 
   return (
     <div className="table-wrapper">
@@ -60,7 +64,8 @@ function PeopleTable({ data }) {
           <thead>
             <tr>
               <th>PLATFORM</th><th>HANDLE</th><th>NAME</th><th>BIO</th>
-              <th>SOURCES</th><th>CONFIDENCE</th><th>SCORE</th><th>VERIFIED</th><th>MATCH</th><th>REASON</th><th>URL</th>
+              <th>SOURCES</th><th>CONFIDENCE</th><th>EXISTENCE</th><th>VERIFICATION</th>
+              <th>HTTP</th><th>SCORE</th><th>VERIFIED</th><th>MATCH</th><th>REASON</th><th>URL</th>
             </tr>
           </thead>
           <tbody>
@@ -72,6 +77,16 @@ function PeopleTable({ data }) {
                 <td className="obs-summary">{acc.bio || '-'}</td>
                 <td className="obs-source">{(acc.sources || []).join(', ')}{acc.multi_source ? ' · multi_source' : ''}</td>
                 <td><span className={`confidence confidence-${acc.confidence_tier}`}>{acc.confidence_tier}</span></td>
+                <td className={acc.existence === 'confirmed' ? 'safe-status' : acc.existence === 'absent' ? 'risky-status' : ''}>
+                  {acc.existence || 'unknown'}
+                </td>
+                <td className="obs-summary">
+                  {acc.verification || 'none'}
+                  {acc.verification_source && acc.verification_source !== 'http' ? ` · ${acc.verification_source}` : ''}
+                </td>
+                <td className={acc.http_status >= 400 ? 'risky-status' : ''}>
+                  {acc.http_status || (acc.http_error ? 'error' : '-')}
+                </td>
                 <td>{acc.score ?? 0}</td>
                 <td className={acc.verified ? 'safe-status' : 'risky-status'}>{acc.verified ? 'YES' : 'no'}</td>
                 <td>{acc.match_score ?? 0}</td>
@@ -80,11 +95,30 @@ function PeopleTable({ data }) {
               </tr>
             ))}
             {accounts.length === 0 && (
-              <tr><td colSpan="11" style={{ textAlign: 'center', color: '#666', padding: '20px' }}>No accounts above the confidence threshold</td></tr>
+              <tr><td colSpan="14" style={{ textAlign: 'center', color: '#666', padding: '20px' }}>No accounts above the confidence threshold</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {removed.length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">REMOVED PROFILES (404/410) <span>{removed.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>PLATFORM</th><th>HANDLE</th><th>STATUS</th><th>URL</th></tr></thead>
+            <tbody>
+              {removed.map(item => (
+                <tr key={item.id || `${item.platform}:${item.handle}`} className="data-row">
+                  <td className="vuln-name">{item.platform}</td>
+                  <td>{item.handle}</td>
+                  <td className="risky-status">{item.http_status || 410}</td>
+                  <td className="clickable-cell">{item.url || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {registrations.length > 0 && (
         <div className="table-section">

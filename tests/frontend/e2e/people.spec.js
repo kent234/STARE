@@ -7,9 +7,9 @@ const fixture = {
   fetched_at: '2026-01-01T00:00:00Z',
   observations: [],
   accounts: [
-    { id: 'account:github:test', platform: 'github', handle: 'test', url: 'https://github.com/test', sources: ['sherlock', 'maigret'], confidence_tier: 'high', multi_source: true, verified: true },
-    { id: 'account:reddit:test', platform: 'reddit', handle: 'test', url: 'https://reddit.com/user/test', sources: ['sherlock'], confidence_tier: 'medium', multi_source: false, verified: true },
-    { id: 'account:vk:test', platform: 'vk', handle: 'test', url: 'https://vk.com/test', sources: ['maigret'], confidence_tier: 'high', multi_source: false, verified: true },
+    { id: 'account:github:test', platform: 'github', handle: 'test', url: 'https://github.com/test', sources: ['sherlock', 'maigret'], confidence_tier: 'high', multi_source: true, verified: true, existence: 'confirmed', verification: 'http' },
+    { id: 'account:reddit:test', platform: 'reddit', handle: 'test', url: 'https://reddit.com/user/test', sources: ['sherlock'], confidence_tier: 'medium', multi_source: false, verified: true, existence: 'confirmed', verification: 'http' },
+    { id: 'account:vk:test', platform: 'vk', handle: 'test', url: 'https://vk.com/test', sources: ['maigret'], confidence_tier: 'high', multi_source: false, verified: true, existence: 'confirmed', verification: 'http' },
   ],
   actor: {
     id: 'actor:test',
@@ -51,6 +51,9 @@ test('profile URL enriches account with public metadata', async ({ page }) => {
       },
     ],
     actor: { id: 'actor:https://vk.com/test', label: 'Test Profile', confidence_tier: 'high', accounts: ['account:vk:test'] },
+    removed: [
+      { id: 'account:github:gone', platform: 'github', handle: 'gone', url: 'https://github.com/gone', http_status: 404 },
+    ],
     breaches: [],
     phone: null,
     errors: [],
@@ -155,6 +158,10 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
         confidence_tier: 'high',
         verified: true,
         url_valid: true,
+        existence: 'confirmed',
+        verification: 'collector',
+        verification_source: 'microsoft',
+        provider: true,
         score: 95,
       },
     ],
@@ -166,6 +173,9 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
       email, domain: 'example.com', format: true, dns: true, disposable: false,
       role: false, free: true, whitelist: false, mx: ['mx.example.com'],
     },
+    removed: [
+      { id: 'account:github:gone', platform: 'github', handle: 'gone', url: 'https://github.com/gone', http_status: 404 },
+    ],
     breaches: [],
     phone: null,
     errors: [],
@@ -194,4 +204,8 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
   await expect(page.locator('.table-wrapper')).toContainText('mx.example.com');
   await expect(page.locator('.table-wrapper')).toContainText('microsoft');
   await expect(page.locator('.table-wrapper')).toContainText('office365.com');
+  await expect(page.locator('.table-wrapper')).toContainText('EXISTENCE');
+  await expect(page.locator('.table-wrapper')).toContainText('confirmed');
+  await expect(page.locator('.table-wrapper')).toContainText('REMOVED PROFILES');
+  await expect(page.locator('.table-wrapper')).toContainText('https://github.com/gone');
 });

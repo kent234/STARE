@@ -105,7 +105,14 @@ func ApplyProfileMatch(ctx context.Context, target string, accounts []Account) [
 			accounts[i].MatchScore = score
 			accounts[i].MatchReason = strings.Join(reasons, ", ")
 			if score >= 50 {
+				// Семантическое совпадение получено после реального fetch
+				// страницы, поэтому существование можно считать подтверждённым.
 				accounts[i].Verified = true
+				accounts[i].Existence = ExistenceConfirmed
+				if accounts[i].Verification == VerificationNone {
+					accounts[i].Verification = VerificationCollector
+					accounts[i].VerificationSource = "profile_match"
+				}
 				if accounts[i].Confidence == "low" {
 					accounts[i].Confidence = "medium"
 				}

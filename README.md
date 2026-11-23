@@ -149,16 +149,19 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 - **Верифицированные обогатители:** GitHub API, GitLab API, Keybase proofs (даёт подтверждённые twitter/github/reddit/hackernews и др.), Gravatar.
 - Holehe больше не считается «аккаунтом»: факты регистрации выносятся в отдельную таблицу `EMAIL REGISTRATIONS`, чтобы не засорять граф.
 - URL-фильтрация отсекает search-страницы, корневые URL, сторонние трекеры и ссылки без handle; платформы канонизируются (`Chess`/`Chess.com` → `chess.com`).
-- HTTP-верификация: 404/410 отбрасываются, 2xx с handle в теле помечаются `verified`, 403/429/timeout остаются без ложного подтверждения.
+- Верификация разделена на два независимых поля: `verification` (`none|collector|http`) и `existence` (`confirmed|blocked|unknown|absent`). Коллекторский `verified` — только evidence, HTTP-проверку он не отменяет.
+- HTTP-верификация: 404/410 → `removed[]`, 401/403/429/login-wall → `blocked` и `low`, timeout/5xx/soft-404 → `unknown` и `low`; `confirmed` только по странице с handle в title/og:title или site-specific `e_string`.
+- `http_attempted`, `http_status`, `http_error`, `url_reachable` показывают, что именно произошло; `PEOPLE_VERIFY_MAX` ограничивает число проверок (по умолчанию 200).
+- Canonical URL выбирается по рангу: профиль > обычная страница > API; все варианты сохраняются в `evidence_urls` (например, `api.chess.com` остаётся evidence, а не ссылкой профиля).
 - **Maigret по умолчанию работает без лимита сайтов**; `MAIGRET_MAX_SITES=0` (или пусто) = весь список, число — ограничение для быстрого режима.
-- Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники, считает `score` и `verified`. По умолчанию показываются только verified / multi-source аккаунты; одиночные эвристические совпадения — через `show low-confidence / unverified`.
+- Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники и считает `score`. По умолчанию показываются только `existence=confirmed`; остальное — через `show low-confidence / unverified`.
 
 Демо без внешних инструментов:
 ```bash
 PEOPLE_FIXTURE=1 docker compose up -d --build backend
 # в UI введите: test
 ```
-Переменные: `SHERLOCK_BIN`, `MAIGRET_BIN`, `MAIGRET_MAX_SITES`, `BLACKBIRD_BIN`, `BLACKBIRD_DIR`, `HOLEHE_BIN`, `GHUNT_BIN`, `PHONEINFOGA_BIN`, `WMN_MAX_SITES`, `GITHUB_TOKEN`.
+Переменные: `SHERLOCK_BIN`, `MAIGRET_BIN`, `MAIGRET_MAX_SITES`, `BLACKBIRD_BIN`, `BLACKBIRD_DIR`, `HOLEHE_BIN`, `GHUNT_BIN`, `PHONEINFOGA_BIN`, `WMN_MAX_SITES`, `PEOPLE_VERIFY_MAX`, `GITHUB_TOKEN`.
 
 Семантическое совпадение: при вводе ссылки на профиль берутся имя/bio/avatar/ссылки источника, затем кандидаты проверяются по этим признакам (`match_score`, `match_reason`), а не только по совпадению handle. По умолчанию для profile URL показываются только совпадения ≥50; остальное — через `show unverified`.
 

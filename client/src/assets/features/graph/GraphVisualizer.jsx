@@ -171,6 +171,14 @@ function GraphVisualizer({ data }) {
           links: acc.links || [],
           confidence: acc.confidence_tier,
           verified: !!acc.verified,
+          existence: acc.existence,
+          verification: acc.verification,
+          verificationSource: acc.verification_source,
+          urlReachable: acc.url_reachable,
+          httpStatus: acc.http_status,
+          httpAttempted: acc.http_attempted,
+          httpError: acc.http_error,
+          evidenceUrls: acc.evidence_urls || [],
           score: acc.score || 0,
           matchScore: acc.match_score || 0,
           matchReason: acc.match_reason || '',
@@ -668,9 +676,13 @@ function GraphVisualizer({ data }) {
             if (conf !== undefined && confidenceRank(conf) < confidenceRank(minConf)) vis = false;
           }
           if (vis && d.type === 'account' && !allowUnverified) {
+            // Новые сканы: по умолчанию только existence=confirmed.
+            // Старые сохранённые графы без поля existence — прежнее правило.
             const strong = data.input_type === 'profile_url'
               ? (d.matchScore || 0) >= 50
-              : (!!d.verified || (d.sources || []).length >= 2);
+              : (d.existence
+                ? d.existence === 'confirmed'
+                : (!!d.verified || (d.sources || []).length >= 2));
             if (!strong) vis = false;
           }
           node.style('display', vis ? 'element' : 'none');
@@ -770,7 +782,14 @@ function GraphVisualizer({ data }) {
           URL: node.url,
           Sources: node.sources,
           Confidence: node.confidence,
+          Existence: node.existence,
+          Verification: node.verification,
+          VerificationSource: node.verificationSource,
           Verified: node.verified,
+          URLReachable: node.urlReachable,
+          HTTPStatus: node.httpStatus,
+          HTTPError: node.httpError,
+          EvidenceURLs: node.evidenceUrls,
           Score: node.score,
           MatchScore: node.matchScore,
           MatchReason: node.matchReason,

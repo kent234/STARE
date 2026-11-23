@@ -86,3 +86,65 @@ func TestNormalizeRejectsGarbageAndCanonicalizes(t *testing.T) {
 		t.Fatalf("bad canonical account: %+v", accounts[0])
 	}
 }
+
+func TestNormalizeVerificationAndCanonicalURL(t *testing.T) {
+	obs := []scanner.Observation{
+		// API-ссылка пришла первой — canonical всё равно должен стать профиль.
+		Observation("whatsmyname", scanner.ConfidenceLow, map[string]any{
+			"platform": "chess.com", "handle": "Yamickuru",
+			"url":      "https://api.chess.com/pub/player/Yamickuru",
+			"verified": true, "page_marker": "player-profile", "page_negative": "not found",
+		}),
+		Observation("maigret", scanner.ConfidenceHigh, map[string]any{
+			"platform": "Chess", "handle": "Yamickuru",
+			"url": "https://www.chess.com/member/Yamickuru",
+		}),
+	}
+	accounts, _, _, _ := Normalize(obs)
+	if len(accounts) != 1 {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+	acc := accounts[0]
+	if acc.URL != "https://www.chess.com/member/Yamickuru" {
+		t.Fatalf("canonical URL = %q", acc.URL)
+	}
+	if len(acc.EvidenceURLs) != 2 {
+		t.Fatalf("evidence URLs = %v", acc.EvidenceURLs)
+	}
+	if acc.Verification != VerificationCollector || acc.Existence != ExistenceUnknown || acc.Verified {
+		t.Fatalf("collector evidence must not confirm existence: %+v", acc)
+	}
+	if acc.PageMarker != "player-profile" || acc.PageNegative != "not found" {
+		t.Fatalf("page markers lost: %+v", acc)
+	}
+}
+
+func TestNormalizeProviderIsConfirmed(t *testing.T) {
+	accounts, _, _, _ := Normalize([]scanner.Observation{
+		Observation("microsoft", scanner.ConfidenceHigh, map[string]any{
+			"kind": "provider", "platform": "microsoft", "handle": "john@example.com",
+			"url": "https://login.microsoftonline.com/", "verified": true,
+		}),
+	})
+	if len(accounts) != 1 {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+	acc := accounts[0]
+	if !acc.Provider || !acc.Verified || acc.Existence != ExistenceConfirmed {
+		t.Fatalf("provider account = %+v", acc)
+	}
+}
+
+func TestCanonicalURLRanking(t *testing.T) {
+	profile := "https://www.chess.com/member/Yamickuru"
+	api := "https://api.chess.com/pub/player/Yamickuru"
+	if canonicalURLRank(profile, "Yamickuru") <= canonicalURLRank(api, "Yamickuru") {
+		t.Fatal("profile URL must outrank API URL")
+	}
+	if got := preferURL(api, profile, "Yamickuru"); got != profile {
+		t.Fatalf("preferURL = %q", got)
+	}
+	if got := preferURL(profile, api, "Yamickuru"); got != profile {
+		t.Fatalf("preferURL must keep profile: %q", got)
+	}
+}

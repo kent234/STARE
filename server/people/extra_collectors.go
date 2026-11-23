@@ -273,10 +273,12 @@ func (c *WhatsMyNameCollector) Collect(ctx context.Context, target string) ([]sc
 			}
 			mu.Lock()
 			obs = append(obs, Observation("whatsmyname", scanner.ConfidenceLow, map[string]any{
-				"platform": strings.ToLower(site.Name),
-				"handle":   handle,
-				"url":      link,
-				"verified": true,
+				"platform":      strings.ToLower(site.Name),
+				"handle":        handle,
+				"url":           link,
+				"verified":      true,
+				"page_marker":   site.EString,
+				"page_negative": site.MString,
 			}))
 			mu.Unlock()
 		}()

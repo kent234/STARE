@@ -62,8 +62,13 @@ func TestNormalizeDedupAndConfidence(t *testing.T) {
 	if !github.MultiSource || len(github.Sources) != 2 {
 		t.Fatalf("expected multi_source with 2 sources, got %+v", github)
 	}
-	if github.Confidence != scanner.ConfidenceHigh {
-		t.Fatalf("confidence = %q, want high", github.Confidence)
+	// Без HTTP-подтверждения источник не делает аккаунт доказанным:
+	// existence=unknown, tier=low (см. verification/existence в Account).
+	if github.Confidence != scanner.ConfidenceLow {
+		t.Fatalf("confidence = %q, want low before HTTP verification", github.Confidence)
+	}
+	if github.Existence != people.ExistenceUnknown || github.Verification != people.VerificationNone {
+		t.Fatalf("verification state = %q/%q", github.Verification, github.Existence)
 	}
 }
 

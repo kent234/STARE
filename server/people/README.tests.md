@@ -26,6 +26,17 @@
 |---|---|---|
 | `TestNormalizeCanonicalAndRegistrations` | `GitHub` + `GitHub (user)`, Holehe registration | Один канонический github-аккаунт, 2 source; регистрация отдельно |
 | `TestVerifiedScoresHigher` | verified vs unverified | verified score выше |
+| `TestNormalizeVerificationAndCanonicalURL` | API-ссылка пришла раньше профиля; page markers | canonical = `/member/...`, API в `evidence_urls`, existence ещё `unknown` |
+| `TestNormalizeProviderIsConfirmed` | Microsoft provider observation | `provider=true`, `existence=confirmed`, без HTTP |
+| `TestCanonicalURLRanking` | профиль vs API | профиль побеждает независимо от порядка |
+
+## `verify_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestVerifyAccountURLs` | 200 title/og, page marker, soft-404, login-wall, 403, 404, 500, provider | confirmed/http, blocked/low, removed[], provider без HTTP |
+| `TestVerifyNetworkErrorIsUnknown` | закрытый порт | `unknown`, `http_error`, не verified |
+| `TestEvaluateProfilePage` | og:title, JSON API, soft-404 body, negative marker, login redirect | корректное existence без ложного подтверждения |
 
 ## `extra_collectors_test.go`
 

@@ -11,7 +11,6 @@ var trackerHosts = map[string]struct{}{
 	"socialblade.com":      {},
 	"similarweb.com":       {},
 	"statsroyale.com":      {},
-	"chess.com":            {}, // реальный профиль обрабатывается отдельно по path
 	"twitchtracker.com.br": {},
 	"streamscharts.com":    {},
 }
@@ -44,7 +43,7 @@ func isValidProfileURL(platform, handle, link string) bool {
 	h := strings.ToLower(handle)
 
 	// Явные агрегаторы и трекеры — не аккаунты соцсетей.
-	if _, bad := trackerHosts[host]; bad && host != "chess.com" {
+	if _, bad := trackerHosts[host]; bad {
 		return false
 	}
 	// Страницы поиска/каталога.
@@ -116,4 +115,97 @@ func canonicalPlatformForURL(link, fallback string) string {
 	default:
 		return canonicalPlatform(fallback)
 	}
+}
+
+// isAPIURL определяет служебные/API-ссылки, которые годятся как evidence,
+// но не должны становиться canonical-профилем (api.chess.com/pub/player/...).
+func isAPIURL(link string) bool {
+	u, err := url.Parse(link)
+	if err != nil {
+		return false
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	if strings.HasPrefix(host, "api.") {
+		return true
+	}
+	path := strings.ToLower(u.Path)
+	for _, segment := range []string{"/api/", "/v1/", "/v2/", "/v3/", "/graphql", "/pub/", "/rest/", "/rpc/"} {
+		if strings.Contains(path, segment) {
+			return true
+		}
+	}
+	if strings.HasSuffix(path, ".json") {
+		return true
+	}
+	query := strings.ToLower(u.RawQuery)
+	return strings.Contains(query, "format=json") || strings.Contains(query, ".json")
+}
+
+// canonicalURLRank ранжирует ссылки при merge: профиль > обычная страница > API.
+// 0 — непригодная для canonical (root/login).
+func canonicalURLRank(link, handle string) int {
+	if link == "" || isRootOrLoginURL(link) {
+		return 0
+	}
+	if isAPIURL(link) {
+		return 1
+	}
+	u, err := url.Parse(link)
+	if err != nil {
+		return 0
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	path := strings.ToLower(strings.Trim(u.Path, "/"))
+	segments := strings.Split(path, "/")
+
+	// Платформы, где профиль — один сегмент пути.
+	singleSegmentHosts := map[string]struct{}{
+		"github.com": {}, "gitlab.com": {}, "x.com": {}, "twitter.com": {},
+		"vk.com": {}, "ok.ru": {}, "instagram.com": {}, "facebook.com": {},
+		"threads.net": {}, "t.me": {}, "keybase.io": {}, "pinterest.com": {},
+	}
+	if _, ok := singleSegmentHosts[host]; ok && len(segments) == 1 && segments[0] != "" {
+		return 3
+	}
+
+	// Явные профильные сегменты.
+	for _, segment := range segments {
+		switch segment {
+		case "member", "members", "user", "users", "u", "profile", "profiles",
+			"people", "author", "channel", "player", "p":
+			return 3
+		}
+	}
+	if strings.Contains(path, "@") {
+		return 3
+	}
+	return 2
+}
+
+// preferURL выбирает canonical-URL детерминированно: выше ранг, затем короче,
+// затем лексикографически. Это исключает зависимость от порядка горутин.
+func preferURL(current, candidate, handle string) string {
+	if candidate == "" {
+		return current
+	}
+	if current == "" {
+		return candidate
+	}
+	rc, rr := canonicalURLRank(current, handle), canonicalURLRank(candidate, handle)
+	if rc != rr {
+		if rr > rc {
+			return candidate
+		}
+		return current
+	}
+	if len(candidate) != len(current) {
+		if len(candidate) < len(current) {
+			return candidate
+		}
+		return current
+	}
+	if candidate < current {
+		return candidate
+	}
+	return current
 }

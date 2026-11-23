@@ -25,6 +25,28 @@ const (
 	KindProfileURL Kind = "profile_url"
 )
 
+// VerificationState — чем именно подтверждён аккаунт.
+// none — только эвристика коллектора; collector — коллектор/провайдер API;
+// http — успешный HTTP-запрос с проверкой страницы.
+type VerificationState string
+
+const (
+	VerificationNone      VerificationState = "none"
+	VerificationCollector VerificationState = "collector"
+	VerificationHTTP      VerificationState = "http"
+)
+
+// ExistenceState — что именно доказано про существование профиля.
+// blocked/unknown никогда не должны трактоваться как «аккаунт есть».
+type ExistenceState string
+
+const (
+	ExistenceConfirmed ExistenceState = "confirmed"
+	ExistenceBlocked   ExistenceState = "blocked"
+	ExistenceUnknown   ExistenceState = "unknown"
+	ExistenceAbsent    ExistenceState = "absent"
+)
+
 // Account — найденный аккаунт на платформе.
 type Account struct {
 	ID          string                 `json:"id"`
@@ -38,13 +60,37 @@ type Account struct {
 	Sources     []string               `json:"sources"`
 	Confidence  scanner.ConfidenceTier `json:"confidence_tier"`
 	MultiSource bool                   `json:"multi_source"`
-	Verified    bool                   `json:"verified"`
-	URLValid    bool                   `json:"url_valid"`
-	HTTPChecked bool                   `json:"http_checked,omitempty"`
-	HTTPStatus  int                    `json:"http_status,omitempty"`
-	Score       int                    `json:"score"`
-	MatchScore  int                    `json:"match_score,omitempty"`
-	MatchReason string                 `json:"match_reason,omitempty"`
+	// Verified — совместимое поле: true только при existence=confirmed.
+	Verified           bool              `json:"verified"`
+	Verification       VerificationState `json:"verification"`
+	VerificationSource string            `json:"verification_source,omitempty"`
+	Existence          ExistenceState    `json:"existence"`
+	URLValid           bool              `json:"url_valid"`
+	URLReachable       bool              `json:"url_reachable"`
+	HTTPAttempted      bool              `json:"http_attempted,omitempty"`
+	HTTPStatus         int               `json:"http_status,omitempty"`
+	HTTPError          string            `json:"http_error,omitempty"`
+	// Provider — аккаунт подтверждён API провайдера (Microsoft/PGP),
+	// повторная HTTP-проверка ему не нужна.
+	Provider bool `json:"provider,omitempty"`
+	// PageMarker/PageNegative — site-specific e_string/m_string из WhatsMyName:
+	// позволяют подтверждать страницу без повторной эвристики по handle.
+	PageMarker   string   `json:"page_marker,omitempty"`
+	PageNegative string   `json:"page_negative,omitempty"`
+	EvidenceURLs []string `json:"evidence_urls,omitempty"`
+	Score        int      `json:"score"`
+	MatchScore   int      `json:"match_score,omitempty"`
+	MatchReason  string   `json:"match_reason,omitempty"`
+}
+
+// RemovedAccount — негативный факт: профиль отдал 404/410.
+// Нужен, чтобы между сканами была видна динамика удаления.
+type RemovedAccount struct {
+	ID       string `json:"id"`
+	Platform string `json:"platform"`
+	Handle   string `json:"handle"`
+	URL      string `json:"url,omitempty"`
+	Status   int    `json:"http_status"`
 }
 
 // Registration — факт регистрации email на сайте (Holehe), не профиль.
@@ -90,6 +136,7 @@ type Result struct {
 	FetchedAt     time.Time             `json:"fetched_at"`
 	Observations  []scanner.Observation `json:"observations"`
 	Accounts      []Account             `json:"accounts"`
+	Removed       []RemovedAccount      `json:"removed,omitempty"`
 	Registrations []Registration        `json:"registrations,omitempty"`
 	Actor         *Actor                `json:"actor,omitempty"`
 	Breaches      []Breach              `json:"breaches,omitempty"`
@@ -219,7 +266,7 @@ func Run(ctx context.Context, target string) Result {
 	res.Observations = observations
 	res.Email = ExtractEmailIntel(observations)
 	res.Accounts, res.Breaches, res.Phone, res.Registrations = Normalize(observations)
-	res.Accounts = VerifyAccountURLs(ctx, res.Accounts)
+	res.Accounts, res.Removed = VerifyAccountURLs(ctx, res.Accounts)
 	if kind == KindProfileURL {
 		res.Accounts = ApplyProfileMatch(ctx, target, res.Accounts)
 	}
@@ -333,8 +380,20 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 			continue
 		}
 		platform = canonicalPlatformForURL(link, platform)
-		verified := boolVal(payload["verified"]) || provider
-		score := accountScore(obs.Confidence, verified, link, handle, obs.Source)
+
+		// "verified" из коллектора — это лишь evidence, а не доказательство
+		// существования: такие аккаунты всё равно проходят HTTP-проверку.
+		collectorVerified := boolVal(payload["verified"])
+		verification := VerificationNone
+		existence := ExistenceUnknown
+		if provider {
+			// Microsoft/PGP подтверждают аккаунт своим API; HTTP не нужен.
+			verification = VerificationCollector
+			existence = ExistenceConfirmed
+		} else if collectorVerified {
+			verification = VerificationCollector
+		}
+		score := accountScore(obs.Confidence, collectorVerified, link, handle, obs.Source)
 		if provider {
 			score = 95
 		}
@@ -343,14 +402,20 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		acc, ok := byKey[key]
 		if !ok {
 			acc = &Account{
-				ID:         "account:" + platform + ":" + strings.ToLower(handle),
-				Platform:   platform,
-				Handle:     handle,
-				URL:        link,
-				Confidence: obs.Confidence,
-				Verified:   verified,
-				URLValid:   true,
-				Score:      score,
+				ID:                 "account:" + platform + ":" + strings.ToLower(handle),
+				Platform:           platform,
+				Handle:             handle,
+				URL:                link,
+				Confidence:         obs.Confidence,
+				Verification:       verification,
+				VerificationSource: verificationSource(verification, obs.Source),
+				Existence:          existence,
+				Provider:           provider,
+				URLValid:           true,
+				Score:              score,
+			}
+			if link != "" {
+				acc.EvidenceURLs = []string{link}
 			}
 			byKey[key] = acc
 		}
@@ -363,9 +428,35 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		if score > acc.Score {
 			acc.Score = score
 		}
-		acc.Verified = acc.Verified || verified
-		if acc.URL == "" {
-			acc.URL = link
+		acc.Provider = acc.Provider || provider
+		if provider {
+			acc.Existence = ExistenceConfirmed
+		}
+		// Сильнейшее доказательство побеждает: http > collector > none.
+		if verificationRank(verification) > verificationRank(acc.Verification) {
+			acc.Verification = verification
+			acc.VerificationSource = verificationSource(verification, obs.Source)
+		} else if verification == acc.Verification && verificationSource(verification, obs.Source) != "" {
+			// Источник выбираем детерминированно, а не по порядку горутин.
+			if src := verificationSource(verification, obs.Source); acc.VerificationSource == "" || src < acc.VerificationSource {
+				acc.VerificationSource = src
+			}
+		}
+		if link != "" {
+			// API-ссылка остаётся в evidence, но canonical выбирается
+			// по рангу: профиль важнее API/галереи.
+			if !contains(acc.EvidenceURLs, link) {
+				acc.EvidenceURLs = append(acc.EvidenceURLs, link)
+			}
+			acc.URL = preferURL(acc.URL, link, handle)
+		}
+		if marker := str(payload["page_marker"]); marker != "" &&
+			(acc.PageMarker == "" || marker < acc.PageMarker) {
+			acc.PageMarker = marker
+		}
+		if negative := str(payload["page_negative"]); negative != "" &&
+			(acc.PageNegative == "" || negative < acc.PageNegative) {
+			acc.PageNegative = negative
 		}
 		if acc.Name == "" || betterName(acc.Name, cleanText(str(payload["name"]))) {
 			acc.Name = cleanText(str(payload["name"]))
@@ -373,7 +464,7 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		if bio := cleanText(str(payload["bio"])); len(bio) > len(acc.Bio) {
 			acc.Bio = bio
 		}
-		if avatar := str(payload["avatar"]); avatar != "" && (acc.Avatar == "" || verified) {
+		if avatar := str(payload["avatar"]); avatar != "" && (acc.Avatar == "" || provider || collectorVerified) {
 			acc.Avatar = avatar
 		}
 		if links, ok := payload["links"].([]any); ok {
@@ -388,16 +479,31 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 	accounts := make([]Account, 0, len(byKey))
 	for _, acc := range byKey {
 		sort.Strings(acc.Sources)
+		sort.Slice(acc.EvidenceURLs, func(i, j int) bool {
+			ri, rj := canonicalURLRank(acc.EvidenceURLs[i], acc.Handle), canonicalURLRank(acc.EvidenceURLs[j], acc.Handle)
+			if ri != rj {
+				return ri > rj
+			}
+			return acc.EvidenceURLs[i] < acc.EvidenceURLs[j]
+		})
 		acc.MultiSource = len(acc.Sources) > 1
-		if !acc.MultiSource && !acc.Verified {
+		if !acc.MultiSource && !acc.Provider {
 			// Одиночное эвристическое совпадение не должно выглядеть как факт.
 			acc.Score -= 15
 			if acc.Score < 0 {
 				acc.Score = 0
 			}
 		}
-		if acc.Verified && acc.Confidence == scanner.ConfidenceLow {
-			acc.Confidence = scanner.ConfidenceMedium
+		// До HTTP-проверки подтверждённым считается только provider.
+		// Всё остальное — unknown и low, даже если коллектор поставил verified.
+		if acc.Existence == ExistenceConfirmed {
+			acc.Verified = true
+			if acc.Confidence == scanner.ConfidenceLow {
+				acc.Confidence = scanner.ConfidenceMedium
+			}
+		} else {
+			acc.Verified = false
+			acc.Confidence = scanner.ConfidenceLow
 		}
 		// Отсекаем явный мусор: неподтверждённые записи с низким score
 		// (корневые URL, несовпадение handle, слабые эвристики).
@@ -551,6 +657,25 @@ func BuildActor(target string, accounts []Account) *Actor {
 		Confidence: best,
 		Accounts:   ids,
 	}
+}
+
+// verificationRank задаёт приоритет доказательства при merge.
+func verificationRank(v VerificationState) int {
+	switch v {
+	case VerificationHTTP:
+		return 2
+	case VerificationCollector:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func verificationSource(v VerificationState, source string) string {
+	if v == VerificationNone {
+		return ""
+	}
+	return source
 }
 
 func confidenceRank(c scanner.ConfidenceTier) int {
