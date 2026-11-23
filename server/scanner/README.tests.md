@@ -26,6 +26,16 @@
 | `TestGreyNoiseSource_Mock` | Классификация/404/429 | 1/0 observation; 429 → ошибка источника |
 | `TestAbuseIPDBSource_Mock` | IP/домен→2 IP/429 | 1/2 observation; заголовок `Key`; 429 → ошибка |
 
+## `truth_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestIsPublicIP` | публичные IPv4/IPv6, RFC1918, loopback, CGNAT, TEST-NET, benchmark, ULA | приватные и bogon отсекаются |
+| `TestDetectWildcard` | одинаковые/ротирующиеся ответы, NXDOMAIN, IP-цель | wildcard + отсортированный `wildcard_ips`; для IP проверка не запускается |
+| `TestSubdomainConfidence` | 2/1/0 источников, нет резолва, wildcard | high только 2+ источника + резолв + не wildcard |
+| `TestActiveProbeTargets` | публичный/приватный/смешанный/нерезолвящийся поддомен | активные проверки только без приватных адресов |
+| `TestUniqueSortedIsSorted` / `TestSortHelpersDeterministic` | неотсортированные входы | стабильный порядок между прогонами |
+
 ## `source_test.go`
 
 | Тест | Сценарий | Ожидание |

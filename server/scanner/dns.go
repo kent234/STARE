@@ -75,5 +75,9 @@ func (c *DNSClient) ResolveExtended(ctx context.Context, domain string) Extended
 			res.NS = append(res.NS, ns.Host)
 		}
 	}
+	// Порядок ответов DNS не гарантирован — стабилизируем для diff.
+	sort.Strings(res.MX)
+	sort.Strings(res.TXT)
+	sort.Strings(res.NS)
 	return res
 }

@@ -219,12 +219,19 @@ function GraphVisualizer({ data }) {
     }
 
     data.subdomains?.forEach(sub => {
-      addNode(sub, sub, 'subdomain');
+      // confidence и wildcard пробрасываем в граф: имя из wildcard-ответа
+      // не должно выглядеть как полноценно подтверждённый хост.
+      addNode(sub, sub, 'subdomain', {
+        confidence: data.subdomain_confidence?.[sub] || 'low',
+        wildcard: !!data.subdomain_wildcard?.[sub],
+      });
       registerMatch(sub, sub);
       link(data.target, sub);
       const subIPs = data.subdomain_ips?.[sub] || [];
       subIPs.forEach(ip => {
-        addNode(ip, ip, 'ip');
+        addNode(ip, ip, 'ip', {
+          private: (data.private_ips || []).includes(ip),
+        });
         registerMatch(ip, ip);
         link(sub, ip);
       });
@@ -232,7 +239,9 @@ function GraphVisualizer({ data }) {
 
     data.ips?.forEach(ip => {
       if (!addedNodes.has(ip)) {
-        addNode(ip, ip, 'ip');
+        addNode(ip, ip, 'ip', {
+          private: (data.private_ips || []).includes(ip),
+        });
         registerMatch(ip, ip);
         link(data.target, ip);
       }
@@ -810,6 +819,11 @@ function GraphVisualizer({ data }) {
         if (data.artifacts?.robots_txt?.length > 0) info.RobotsTxt = data.artifacts.robots_txt;
         info.Observations = observations.length;
         info.Vulnerabilities = vulnerabilities.length;
+        info.WildcardDNS = data.wildcard_dns ? 'yes' : 'no';
+        if (data.wildcard_ips?.length > 0) info.WildcardIPs = data.wildcard_ips;
+        // Приватные/bogon адреса остаются в графе, но активные проверки по ним
+        // не выполнялись — это должно быть видно в деталях.
+        if (data.private_ips?.length > 0) info.PrivateIPs = data.private_ips;
         if (observations.length > 0) {
           const bySource = {};
           observations.forEach(o => { bySource[o.source] = (bySource[o.source] || 0) + 1; });
@@ -820,9 +834,14 @@ function GraphVisualizer({ data }) {
         if (node.type === 'ip') {
           info.ASN = data.asn?.[node.label] || 'Unknown';
           info.OpenPorts = data.ports?.[node.label] || [];
+          info.Private = node.private ? 'yes (active checks skipped)' : 'no';
         } else {
           info.ParentDomain = data.target;
           info.ResolvedIPs = data.subdomain_ips?.[node.label] || ['No IP resolved'];
+          info.Confidence = node.confidence || data.subdomain_confidence?.[node.label] || 'low';
+          info.Wildcard = node.wildcard || data.subdomain_wildcard?.[node.label]
+            ? 'yes (DNS wildcard)'
+            : 'no';
         }
         const related = observations.filter(o => {
           const p = o.payload || {};

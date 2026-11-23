@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,8 +35,15 @@ type ScanResult struct {
 	CloudBuckets        []CloudBucket       `json:"cloud_buckets,omitempty"`
 	ThreatHits          []ThreatHit         `json:"threat_hits,omitempty"`
 	WildcardDNS         bool                `json:"wildcard_dns,omitempty"`
-	Errors              []string            `json:"errors"`
-	Duration            string              `json:"duration"`
+	// WildcardIPs — адреса, которые DNS отдаёт на случайные имена.
+	// SubdomainWildcard — имена, чей резолв целиком попал в этот набор.
+	WildcardIPs       []string        `json:"wildcard_ips,omitempty"`
+	SubdomainWildcard map[string]bool `json:"subdomain_wildcard,omitempty"`
+	// PrivateIPs — адреса из result.IPs, которые нельзя сканировать
+	// (RFC1918, loopback, CGNAT, link-local и прочие bogon-диапазоны).
+	PrivateIPs []string `json:"private_ips,omitempty"`
+	Errors     []string `json:"errors"`
+	Duration   string   `json:"duration"`
 }
 
 // RunFullScan — выполняет полный цикл разведки и возвращает результат
@@ -49,6 +57,7 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		SubdomainIPs:        make(map[string][]string),
 		SubdomainSources:    make(map[string][]string),
 		SubdomainConfidence: make(map[string]string),
+		SubdomainWildcard:   make(map[string]bool),
 		Errors:              []string{},
 	}
 
@@ -59,6 +68,18 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	}
 
 	dns := NewDNSClient()
+
+	// Резолвим апекс заранее: если он указывает только на приватные/bogon
+	// адреса, активные стадии (nuclei, httpx, tlsx, katana, порты) запрещены.
+	// Это защита от SSRF через A-запись вида 10.0.0.1/127.0.0.1.
+	apexIPs := []string{}
+	if ip := net.ParseIP(target); ip != nil {
+		apexIPs = []string{target}
+	} else if resolved, err := dns.Resolve(ctx, target); err == nil {
+		apexIPs = resolved
+	}
+	apexSafe := hostSafeToProbe(apexIPs)
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
@@ -82,6 +103,12 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	go func() {
 		defer wgNuclei.Done()
 		if net.ParseIP(target) != nil {
+			return
+		}
+		if !apexSafe {
+			mu.Lock()
+			result.Errors = append(result.Errors, "nuclei: skipped: apex resolves only to non-public IPs")
+			mu.Unlock()
 			return
 		}
 		nctx, cancel := context.WithTimeout(ctx, nucleiTimeout())
@@ -142,6 +169,12 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	}()
 	go func() {
 		defer wg.Done()
+		if !apexSafe {
+			mu.Lock()
+			result.Errors = append(result.Errors, "artifacts: skipped: apex resolves only to non-public IPs")
+			mu.Unlock()
+			return
+		}
 		arts, techs := AnalyzeArtifacts(ctx, target)
 		result.Artifacts = arts
 		result.Technologies = techs
@@ -149,22 +182,20 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 
 	wg.Wait()
 	result.Subdomains = uniqueSorted(result.Subdomains)
-	result.WildcardDNS = DetectWildcardDNS(ctx, target)
-	for _, sub := range result.Subdomains {
-		switch {
-		case len(result.SubdomainSources[sub]) >= 2:
-			result.SubdomainConfidence[sub] = "high"
-		case len(result.SubdomainSources[sub]) == 1:
-			result.SubdomainConfidence[sub] = "medium"
-		default:
-			result.SubdomainConfidence[sub] = "low"
-		}
+	// Источники каждого имени собираются горутинами в произвольном порядке —
+	// сортируем, чтобы JSON и diff между прогонами были стабильны.
+	for sub := range result.SubdomainSources {
+		sort.Strings(result.SubdomainSources[sub])
 	}
 
+	// Wildcard проверяется до резолва имён: его IP-набор нужен, чтобы
+	// не подтверждать сгенерированные DNS-ответы.
+	wildcard := DetectWildcardDNS(ctx, target)
+	result.WildcardDNS = wildcard.Detected
+	result.WildcardIPs = wildcard.IPs
+
 	// 3. IP-адреса и связь с поддоменами
-	ips := []string{}
-	resolved, _ := dns.Resolve(ctx, target)
-	ips = append(ips, resolved...)
+	ips := append([]string{}, apexIPs...)
 
 	// Резолвим поддомены параллельно: последовательный обход на больших зонах
 	// съедал минуты и не оставлял времени на обогащение/Nuclei.
@@ -192,9 +223,27 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	dnsWG.Wait()
 	result.IPs = uniqueSorted(ips)
 
+	// Confidence считается только после резолва: имя без A-записи не может
+	// быть high. Имя, чей резолв целиком совпал с wildcard-набором, понижается
+	// до low независимо от числа источников.
+	for _, sub := range result.Subdomains {
+		subIPs := result.SubdomainIPs[sub]
+		wildcardHit := isWildcardResolution(subIPs, wildcard.IPs)
+		if wildcardHit {
+			result.SubdomainWildcard[sub] = true
+		}
+		result.SubdomainConfidence[sub] = subdomainConfidence(
+			len(result.SubdomainSources[sub]), len(subIPs) > 0, wildcardHit,
+		)
+	}
+
+	// Публичные адреса можно сканировать, приватные/bogon — только показывать.
+	publicIPs, privateIPs := splitPublicPrivateIPs(result.IPs)
+	result.PrivateIPs = privateIPs
+
 	// Дополнительные источники: обычные — по домену, batch-источники — по всем IP.
 	// Запускаются после DNS, параллельно с ASN/портами; ошибки изолированы per-source.
-	obsTargets := append([]string{}, result.IPs...)
+	obsTargets := append([]string{}, publicIPs...)
 	if net.ParseIP(target) != nil {
 		obsTargets = append(obsTargets, target)
 	}
@@ -209,8 +258,8 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		mu.Unlock()
 	}()
 
-	// 4. ASN
-	for _, ip := range result.IPs {
+	// 4. ASN — только публичные адреса (для приватных внешний API бессмысленен).
+	for _, ip := range publicIPs {
 		asn, _ := GetASN(ctx, ip)
 		result.ASN[ip] = asn
 	}
@@ -220,7 +269,9 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	wgActive.Add(1)
 	go func() {
 		defer wgActive.Done()
-		hosts := append([]string{target}, result.Subdomains...)
+		// В httpx уходят только хосты без приватных адресов: активная
+		// проверка не должна касаться внутренней сети.
+		hosts := activeProbeTargets(target, apexIPs, result.Subdomains, result.SubdomainIPs)
 		probes, err := RunHTTPX(ctx, hosts)
 		mu.Lock()
 		defer mu.Unlock()
@@ -238,6 +289,12 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	wgActive.Add(1)
 	go func() {
 		defer wgActive.Done()
+		if !apexSafe {
+			mu.Lock()
+			result.Errors = append(result.Errors, "tlsx: skipped: apex resolves only to non-public IPs")
+			mu.Unlock()
+			return
+		}
 		certs, err := RunTLSX(ctx, target)
 		mu.Lock()
 		defer mu.Unlock()
@@ -254,6 +311,12 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		if net.ParseIP(target) != nil {
 			return
 		}
+		if !apexSafe {
+			mu.Lock()
+			result.Errors = append(result.Errors, "katana: skipped: apex resolves only to non-public IPs")
+			mu.Unlock()
+			return
+		}
 		endpoints, err := RunKatana(ctx, "https://"+target)
 		mu.Lock()
 		defer mu.Unlock()
@@ -267,7 +330,7 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	wgActive.Add(1)
 	go func() {
 		defer wgActive.Done()
-		hits, err := FetchThreatFeeds(ctx, target, result.IPs, result.Subdomains)
+		hits, err := FetchThreatFeeds(ctx, target, publicIPs, result.Subdomains)
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
@@ -290,10 +353,10 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	}()
 
 	// 5. Порты: naabu top-1000 + быстрый fallback из 7 частых портов.
-	if len(result.IPs) > 0 {
+	if len(publicIPs) > 0 {
 		portsClient := NewPortsClient()
-		fallback, _ := portsClient.ScanPortsMany(ctx, result.IPs)
-		fast, _ := RunNaabu(ctx, result.IPs, 1000)
+		fallback, _ := portsClient.ScanPortsMany(ctx, publicIPs)
+		fast, _ := RunNaabu(ctx, publicIPs, 1000)
 		result.Ports = mergePorts(fallback, fast)
 
 		var wgBanners sync.WaitGroup
@@ -322,8 +385,36 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	wgNuclei.Wait()
 	result.Vulnerabilities = EnrichNucleiWithKEV(ctx, result.Vulnerabilities)
 	result.Vulnerabilities = EnrichNucleiWithEPSS(ctx, result.Vulnerabilities)
+
+	// Все параллельные стадии пишут срезы в произвольном порядке.
+	// Стабилизируем их перед отдачей: иначе diff между прогонами и
+	// сохранённые графы сравнивать невозможно.
+	sortObservations(result.Observations)
+	sortVulnerabilities(result.Vulnerabilities)
+	sortHTTPProbes(result.HTTP)
+	sortTLSInfos(result.TLS)
+	sortThreatHits(result.ThreatHits)
+	sortCloudBuckets(result.CloudBuckets)
+	result.Errors = uniqueSorted(result.Errors)
+
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 	return result
+}
+
+// activeProbeTargets отбирает хосты для httpx: апекс и поддомены,
+// у которых нет приватных адресов. Имена без резолва оставляем — решение
+// принимает сам httpx; но если хотя бы один адрес приватный, хост запрещён.
+func activeProbeTargets(target string, apexIPs, subs []string, subIPs map[string][]string) []string {
+	out := make([]string, 0, len(subs)+1)
+	if hostSafeToProbe(apexIPs) {
+		out = append(out, target)
+	}
+	for _, sub := range subs {
+		if hostSafeToProbe(subIPs[sub]) {
+			out = append(out, sub)
+		}
+	}
+	return uniqueSorted(out)
 }
 
 // nucleiTimeout — таймаут запуска Nuclei (NUCLEI_TIMEOUT, по умолчанию 5m).
@@ -387,6 +478,9 @@ func uniqueSorted(in []string) []string {
 	for s := range seen {
 		out = append(out, s)
 	}
+	// Без явной сортировки порядок зависел от обхода map и менялся между
+	// прогонами — это ломало diff и сравнение сохранённых графов.
+	sort.Strings(out)
 	return out
 }
 

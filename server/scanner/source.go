@@ -114,12 +114,102 @@ func FetchAllSources(ctx context.Context, target string, extra ...string) ([]Obs
 	return obs, errs
 }
 
+// bogonNets — диапазоны, которые не являются публично маршрутизируемыми,
+// но не покрываются стандартными предикатами net.IP (CGNAT, benchmark,
+// documentation, reserved). Нужны как SSRF-барьер для активных стадий.
+var bogonNets = mustCIDRs(
+	"0.0.0.0/8",
+	"100.64.0.0/10",   // CGNAT
+	"192.0.0.0/24",    // IETF protocol assignments
+	"192.0.2.0/24",    // TEST-NET-1
+	"192.88.99.0/24",  // 6to4 relay anycast
+	"198.18.0.0/15",   // benchmarking
+	"198.51.100.0/24", // TEST-NET-2
+	"203.0.113.0/24",  // TEST-NET-3
+	"240.0.0.0/4",     // reserved
+	"255.255.255.255/32",
+	"100::/64",      // discard-only
+	"2001:db8::/32", // documentation
+)
+
+func mustCIDRs(cidrs ...string) []*net.IPNet {
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err == nil {
+			out = append(out, network)
+		}
+	}
+	return out
+}
+
+// isPublicIP — строгий фильтр для адресов, которые разрешено сканировать.
+// Приватные, loopback, link-local, multicast и bogon-диапазоны отсекаются,
+// чтобы домен с A-записью на 127.0.0.1/RFC1918 не заставил сервер сканировать
+// собственную сеть (SSRF).
 func isPublicIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
-	return !(ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified())
+	// IPv4-mapped IPv6 приводим к IPv4, чтобы предикаты работали предсказуемо.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	for _, network := range bogonNets {
+		if network.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+// isPublicIPString — вариант для JSON/строковых целей.
+func isPublicIPString(value string) bool {
+	return isPublicIP(net.ParseIP(strings.TrimSpace(value)))
+}
+
+// hasPublicIP — есть ли среди адресов хотя бы один публичный.
+func hasPublicIP(ips []string) bool {
+	for _, value := range ips {
+		if isPublicIPString(value) {
+			return true
+		}
+	}
+	return false
+}
+
+// hostSafeToProbe разрешает активную проверку хоста только если все его
+// известные адреса публичные. Если резолва нет, хост не отбрасываем —
+// инструмент (httpx/naabu) сам решит, но SSRF-гарантии это не даёт;
+// поэтому при наличии приватного адреса проверка безусловно запрещена.
+func hostSafeToProbe(ips []string) bool {
+	if len(ips) == 0 {
+		return true
+	}
+	for _, value := range ips {
+		if !isPublicIPString(value) {
+			return false
+		}
+	}
+	return true
+}
+
+// splitPublicPrivateIPs делит уникальный список адресов на публичные
+// (можно сканировать) и приватные/bogon (только показывать).
+func splitPublicPrivateIPs(ips []string) (public, private []string) {
+	for _, value := range ips {
+		if isPublicIPString(value) {
+			public = append(public, value)
+		} else {
+			private = append(private, value)
+		}
+	}
+	return uniqueSorted(public), uniqueSorted(private)
 }
 
 // fetchBatch последовательно обогащает targets через обычный Fetch источника,

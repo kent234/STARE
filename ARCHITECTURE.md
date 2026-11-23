@@ -33,20 +33,27 @@ server/
 
 1. **Passive subdomains** (parallel): crt.sh, crt.name, RapidDNS, HackerTarget,
    OTX, URLScan, TLSCC, subfinder. Each subdomain stores `subdomain_sources`
-   and `subdomain_confidence` (high = 2+ sources).
+   and `subdomain_confidence`.
 2. **DNS/WHOIS/technology** in parallel.
-3. **Resolution**: parallel DNS for all subdomains, dedupe IPs.
-4. **Enrichment sources** (`Source` registry): abuse.ch, IPinfo, OSV, Shodan,
-   GreyNoise, AbuseIPDB — batch by all IPs.
-5. **Active checks** (ProjectDiscovery CLI, optional):
+3. **Wildcard DNS**: three random labels; resolved answers form `wildcard_ips`.
+4. **Resolution**: parallel DNS for all subdomains, dedupe IPs. A name whose
+   addresses are entirely inside `wildcard_ips` gets `subdomain_wildcard=true`;
+   `high` confidence requires 2+ sources **and** a non-wildcard resolution.
+   Private/bogon addresses stay in `ips` but are listed in `private_ips` and are
+   never passed to active checks (SSRF barrier).
+5. **Enrichment sources** (`Source` registry): abuse.ch, IPinfo, OSV, Shodan,
+   GreyNoise, AbuseIPDB — batch by public IPs only.
+6. **Active checks** (ProjectDiscovery CLI, optional; public hosts only):
    - `httpx`: HTTP status/title/tech/TLS/CDN/favicon → `http[]`
    - `tlsx`: certificate CN/SAN/expiry → `tls[]`
    - `katana`: crawl endpoints → `endpoints[]`
    - `naabu`: top-1000 TCP ports, merged with fallback 7 ports
    - cloud buckets: S3/GCS/Azure name checks → `cloud_buckets[]`
    - threat feeds: OpenPhish/Spamhaus/Tor exits → `threat_hits[]`
-6. **Nuclei** (parallel, optional) + CISA KEV/EPSS enrichment.
-7. **Wildcard DNS** detection before trusting subdomain brute results.
+7. **Nuclei** (parallel, optional) + CISA KEV/EPSS enrichment.
+
+All parallel slices are sorted before output: subdomains, sources, IPs,
+observations, HTTP/TLS, vulnerabilities, buckets and errors.
 
 All external tools are optional: missing binary = source skipped, scan continues.
 Paths: `SUBFINDER_BIN`, `HTTPX_BIN`, `NAABU_BIN`, `TLSX_BIN`, `KATANA_BIN`.
