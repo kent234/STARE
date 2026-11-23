@@ -25,6 +25,8 @@ const (
 	httpxMaxTargets = 500
 	// katanaMaxEndpoints — предел сохраняемых URL после краулинга.
 	katanaMaxEndpoints = 2000
+	// tlsxMaxHosts — предел хостов на один запуск tlsx.
+	tlsxMaxHosts = 200
 )
 
 // HTTPProbe — результат httpx (живой HTTP-сервис и его атрибуты).
@@ -224,6 +226,48 @@ func RunTLSX(ctx context.Context, host string) ([]TLSInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseTLSX(out), nil
+}
+
+// RunTLSXHosts проверяет TLS по списку хостов одним запуском tlsx.
+// Это ключевое исправление: раньше tlsx видел только апекс.
+func RunTLSXHosts(ctx context.Context, hosts []string) ([]TLSInfo, error) {
+	hosts = uniqueSorted(hosts)
+	if len(hosts) == 0 {
+		return nil, nil
+	}
+	if len(hosts) == 1 {
+		return RunTLSX(ctx, hosts[0])
+	}
+
+	file, err := os.CreateTemp("", "stare-tlsx-*.txt")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(file.Name())
+	for _, host := range hosts {
+		if _, err := file.WriteString(host + "\n"); err != nil {
+			file.Close()
+			return nil, err
+		}
+	}
+	if err := file.Close(); err != nil {
+		return nil, err
+	}
+
+	out, err := runPDTool(ctx, "TLSX_BIN", "tlsx", []string{
+		"-l", file.Name(), "-json", "-silent", "-no-color",
+	}, "", 180*time.Second)
+	if errors.Is(err, errToolNotInstalled) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return parseTLSX(out), nil
+}
+
+func parseTLSX(out []byte) []TLSInfo {
 	var certs []TLSInfo
 	scanJSONLines(out, func(row map[string]any) {
 		certs = append(certs, TLSInfo{
@@ -237,7 +281,7 @@ func RunTLSX(ctx context.Context, host string) ([]TLSInfo, error) {
 			Version:   strVal(row["tls_version"]),
 		})
 	})
-	return certs, nil
+	return certs
 }
 
 // RunKatana — краулинг и извлечение URL/эндпоинтов.

@@ -363,6 +363,31 @@ function DataTable({ data }) {
         </div>
       )}
 
+      {(data.hosts || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">HOSTS <span>{data.hosts.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>HOST</th><th>IPs</th><th>RESOLVED</th><th>WILDCARD</th><th>PRIVATE</th><th>PORTS</th><th>HTTP</th><th>TLS</th></tr></thead>
+            <tbody>
+              {data.hosts.map(host => (
+                <tr key={host.host} className="data-row">
+                  <td className="vuln-name">{host.host}</td>
+                  <td className="obs-summary">{(host.ips || []).join(', ') || '-'}</td>
+                  <td>{String(!!host.resolved)}</td>
+                  <td className={host.wildcard ? 'risky-status' : ''}>{String(!!host.wildcard)}</td>
+                  <td className={host.private ? 'risky-status' : ''}>{String(!!host.private)}</td>
+                  <td>{(host.ports || []).join(', ') || '-'}</td>
+                  <td className="obs-summary">
+                    {host.http ? `${host.http.status_code || '-'} ${host.http.title || ''}`.trim() : '-'}
+                  </td>
+                  <td>{host.tls?.length ? `${host.tls.length} cert(s)` : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="table-section">
         <h3 className="table-title">
           INFRASTRUCTURE <span>{rows.length} rows</span>

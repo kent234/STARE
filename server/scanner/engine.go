@@ -3,6 +3,7 @@ package scanner
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"sort"
@@ -34,6 +35,7 @@ type ScanResult struct {
 	Vulnerabilities     []NucleiFinding     `json:"vulnerabilities,omitempty"`
 	HTTP                []HTTPProbe         `json:"http,omitempty"`
 	TLS                 []TLSInfo           `json:"tls,omitempty"`
+	Hosts               []HostInfo          `json:"hosts,omitempty"`
 	Endpoints           []string            `json:"endpoints,omitempty"`
 	CloudBuckets        []CloudBucket       `json:"cloud_buckets,omitempty"`
 	ThreatHits          []ThreatHit         `json:"threat_hits,omitempty"`
@@ -403,52 +405,6 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	wgActive.Add(1)
 	go func() {
 		defer wgActive.Done()
-		if !apexSafe {
-			mu.Lock()
-			result.Errors = append(result.Errors, "tlsx: skipped: apex resolves only to non-public IPs")
-			result.Meta.Tools["tlsx"] = ToolStatus{Status: ToolSkipped, Input: 1}
-			result.Meta.Coverage["tls"] = StageCoverage{Skipped: 1}
-			mu.Unlock()
-			return
-		}
-		if _, ok := toolBinary("TLSX_BIN", "tlsx"); !ok {
-			mu.Lock()
-			result.Meta.Tools["tlsx"] = ToolStatus{Status: ToolMissing, Input: 1}
-			result.Meta.Coverage["tls"] = StageCoverage{Attempted: 1, Skipped: 1}
-			mu.Unlock()
-			return
-		}
-
-		started := time.Now()
-		certs, err := RunTLSX(ctx, target)
-		status := ToolStatus{
-			Status:     ToolRan,
-			DurationMS: time.Since(started).Milliseconds(),
-			Input:      1,
-			Items:      len(certs),
-		}
-		if err != nil {
-			status.Status = ToolError
-			status.Error = err.Error()
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		result.Meta.Tools["tlsx"] = status
-		cov := StageCoverage{Attempted: 1}
-		if err != nil {
-			cov.Failed = 1
-			result.Errors = append(result.Errors, "tlsx: "+err.Error())
-			result.Meta.Coverage["tls"] = cov
-			return
-		}
-		cov.Succeeded = 1
-		result.Meta.Coverage["tls"] = cov
-		result.TLS = certs
-	}()
-
-	wgActive.Add(1)
-	go func() {
-		defer wgActive.Done()
 		if net.ParseIP(target) != nil {
 			mu.Lock()
 			result.Meta.Tools["katana"] = ToolStatus{Status: ToolSkipped}
@@ -579,6 +535,50 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	wgActive.Wait()
 	wgObs.Wait()
 	wgNuclei.Wait()
+
+	// TLS проверяется после портов/httpx: tlsx запускается по всем хостам
+	// с открытым 443, а не только по апексу.
+	tlsHosts := tlsCandidateHosts(target, apexIPs, result.Subdomains, result.SubdomainIPs, result.Ports, result.HTTP)
+	result.TLS = mergeTLS(result.TLS, probeTLSInfo(result.HTTP))
+	switch {
+	case !apexSafe:
+		result.Meta.Tools["tlsx"] = ToolStatus{Status: ToolSkipped, Input: len(tlsHosts)}
+		result.Meta.Coverage["tls"] = StageCoverage{Attempted: len(tlsHosts), Skipped: len(tlsHosts)}
+	case len(tlsHosts) == 0:
+		result.Meta.Tools["tlsx"] = ToolStatus{Status: ToolSkipped}
+	default:
+		if _, ok := toolBinary("TLSX_BIN", "tlsx"); !ok {
+			result.Meta.Tools["tlsx"] = ToolStatus{Status: ToolMissing, Input: len(tlsHosts)}
+			result.Meta.Coverage["tls"] = StageCoverage{Attempted: len(tlsHosts), Skipped: len(tlsHosts)}
+			break
+		}
+		started := time.Now()
+		certs, err := RunTLSXHosts(ctx, tlsHosts)
+		status := ToolStatus{
+			Status:     ToolRan,
+			DurationMS: time.Since(started).Milliseconds(),
+			Input:      len(tlsHosts),
+			Items:      len(certs),
+			Truncated:  len(tlsHosts) >= tlsxMaxHosts,
+		}
+		cov := StageCoverage{Attempted: len(tlsHosts), Succeeded: len(certs)}
+		if cov.Succeeded > cov.Attempted {
+			cov.Succeeded = cov.Attempted
+		}
+		cov.Failed = cov.Attempted - cov.Succeeded
+		if err != nil {
+			status.Status = ToolError
+			status.Error = err.Error()
+			result.Errors = append(result.Errors, "tlsx: "+err.Error())
+		} else {
+			result.TLS = mergeTLS(result.TLS, certs)
+		}
+		result.Meta.Tools["tlsx"] = status
+		result.Meta.Coverage["tls"] = cov
+	}
+
+	result.Hosts = buildHosts(target, apexIPs, result)
+
 	result.Vulnerabilities = EnrichNucleiWithKEV(ctx, result.Vulnerabilities)
 	result.Vulnerabilities = EnrichNucleiWithEPSS(ctx, result.Vulnerabilities)
 
@@ -626,40 +626,73 @@ func grabBanner(ctx context.Context, ip string, port int) string {
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	dialer := &net.Dialer{Timeout: 3 * time.Second}
 
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	var (
+		conn net.Conn
+		err  error
+	)
+	if isTLSPort(port) {
+		// Для 443/8443 нужен реальный TLS-handshake, иначе «баннер»
+		// был бы фиктивной строкой без единого сетевого запроса.
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			InsecureSkipVerify: true,
+		})
+	} else {
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
 		return ""
 	}
 	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
-
-	// Если это веб-порт, отправляем HTTP-запрос
-	if port == 80 || port == 8080 {
-		fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: %s\r\nUser-Agent: STARE/1.0\r\nConnection: close\r\n\r\n", ip)
-	} else if port == 443 {
-		// Для HTTPS нужно TLS-соединение (пока пропустим или используем http.Get)
-		return "HTTPS (TLS)"
+	if isWebPort(port) {
+		fmt.Fprintf(conn, "HEAD / HTTP/1.0\r\nHost: %s\r\nUser-Agent: STARE/1.0\r\nConnection: close\r\n\r\n", ip)
 	}
 
 	reader := bufio.NewReader(conn)
 	buffer := make([]byte, 512)
 	n, _ := reader.Read(buffer)
-
-	rawBanner := string(buffer[:n])
-	cleanBanner := strings.Map(func(r rune) rune {
-		if r >= 32 && r <= 126 {
-			return r
-		}
-		return -1
-	}, rawBanner)
-
-	// Берем только первую строку (например, "HTTP/1.1 200 OK" или "HTTP/1.1 301 Moved Permanently")
-	lines := strings.Split(cleanBanner, "\n")
-	if len(lines) > 0 {
-		return strings.TrimSpace(lines[0])
+	if n == 0 {
+		return ""
 	}
-	return strings.TrimSpace(cleanBanner)
+
+	// Берём первую непустую строку, но не удаляем переводы строк из ответа
+	// целиком: иначе «первая строка» склеивает весь 512-байтный кусок.
+	raw := strings.ReplaceAll(string(buffer[:n]), "\r\n", "\n")
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(strings.Map(func(r rune) rune {
+			if r >= 32 && r <= 126 {
+				return r
+			}
+			return -1
+		}, line))
+		if line == "" {
+			continue
+		}
+		if len(line) > 200 {
+			line = line[:200]
+		}
+		return line
+	}
+	return ""
+}
+
+func isTLSPort(port int) bool {
+	switch port {
+	case 443, 8443, 9443:
+		return true
+	default:
+		return false
+	}
+}
+
+func isWebPort(port int) bool {
+	switch port {
+	case 80, 443, 8000, 8080, 8443, 8888, 9443:
+		return true
+	default:
+		return false
+	}
 }
 
 func uniqueSorted(in []string) []string {

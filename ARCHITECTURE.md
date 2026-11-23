@@ -45,12 +45,17 @@ server/
    GreyNoise, AbuseIPDB — batch by public IPs only.
 6. **Active checks** (ProjectDiscovery CLI, optional; public hosts only):
    - `httpx`: HTTP status/title/tech/TLS/CDN/favicon → `http[]`
-   - `tlsx`: certificate CN/SAN/expiry → `tls[]`
+   - `tlsx`: certificate CN/SAN/expiry → `tls[]`; runs over **all hosts with
+     open 443**, not just the apex, then merges TLS from httpx
    - `katana`: crawl endpoints → `endpoints[]`
-   - `naabu`: top-1000 TCP ports, merged with fallback 7 ports
+   - `naabu`: top-1000 TCP ports, merged with fallback 7 ports; fallback scans
+     IPs in parallel (8 IPs × 40 workers)
+   - banners: real TCP/TLS read (HTTP request for web ports, first line only)
    - cloud buckets: S3/GCS/Azure name checks → `cloud_buckets[]`
    - threat feeds: OpenPhish/Spamhaus/Tor exits → `threat_hits[]`
-7. **Nuclei** (parallel, optional) + CISA KEV/EPSS enrichment.
+7. **Host model**: `hosts[]` joins IPs, wildcard/private flags, ports, best HTTP
+   probe and TLS certs into one record.
+8. **Nuclei** (parallel, optional) + CISA KEV/EPSS enrichment.
 
 All parallel slices are sorted before output: subdomains, sources, IPs,
 observations, HTTP/TLS, vulnerabilities, buckets and errors.

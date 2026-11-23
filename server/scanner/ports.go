@@ -6,6 +6,7 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -85,23 +86,52 @@ func (c *PortsClient) ScanPorts(ctx context.Context, ip string) ([]int, error) {
 }
 
 func (c *PortsClient) ScanPortsMany(ctx context.Context, ips []string) (map[string][]int, error) {
-	result := make(map[string][]int, len(ips))
-
+	unique := make([]string, 0, len(ips))
+	seen := make(map[string]struct{}, len(ips))
 	for _, ip := range ips {
-		select {
-		case <-ctx.Done():
-			return result, ctx.Err()
-		default:
-		}
-		ports, err := c.ScanPorts(ctx, ip)
-		if err != nil {
+		if _, ok := seen[ip]; ok {
 			continue
 		}
-		if len(ports) > 0 {
-			result[ip] = ports
-		}
+		seen[ip] = struct{}{}
+		unique = append(unique, ip)
 	}
-	return result, nil
+
+	// Последовательный обход 66 IP занимал основную часть времени.
+	// Ограниченный пул: каждый ScanPorts внутри уже использует 40 воркеров,
+	// поэтому 8 IP одновременно = ~320 сокетов, а не тысячи.
+	const ipConcurrency = 8
+	sem := make(chan struct{}, ipConcurrency)
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+		result   = make(map[string][]int, len(unique))
+	)
+	for _, ip := range unique {
+		ip := ip
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			ports, err := c.ScanPorts(ctx, ip)
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil && ctx.Err() != nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				return
+			}
+			if len(ports) > 0 {
+				mu.Lock()
+				result[ip] = ports
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return result, firstErr
 }
 
 func (c *PortsClient) isOpen(ctx context.Context, ip string, port int) bool {
