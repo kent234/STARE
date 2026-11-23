@@ -104,7 +104,7 @@ function GraphVisualizer({ data }) {
   const minimapRef = useRef(null);
   const cyRef = useRef(null);
   const revealedRef = useRef(new Set());
-  const filtersRef = useRef({ hiddenTypes: [], minConfidence: 'medium', showUnverified: false });
+  const filtersRef = useRef({ hiddenTypes: [], minConfidence: 'medium', showUnverified: false, showSensitive: false });
   const applyVisibilityRef = useRef(null);
   const focusRef = useRef(null);
 
@@ -114,14 +114,15 @@ function GraphVisualizer({ data }) {
   const [hiddenTypes, setHiddenTypes] = useState([]);
   const [minConfidence, setMinConfidence] = useState('medium');
   const [showUnverified, setShowUnverified] = useState(false);
+  const [showSensitive, setShowSensitive] = useState(false);
   const [search, setSearch] = useState('');
   const [rendererName, setRendererName] = useState('canvas');
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    filtersRef.current = { hiddenTypes, minConfidence, showUnverified };
+    filtersRef.current = { hiddenTypes, minConfidence, showUnverified, showSensitive };
     applyVisibilityRef.current?.();
-  }, [hiddenTypes, minConfidence, showUnverified]);
+  }, [hiddenTypes, minConfidence, showUnverified, showSensitive]);
 
   useEffect(() => {
     if (!data || !containerRef.current) return undefined;
@@ -179,6 +180,7 @@ function GraphVisualizer({ data }) {
           httpAttempted: acc.http_attempted,
           httpError: acc.http_error,
           evidenceUrls: acc.evidence_urls || [],
+          sensitive: !!acc.sensitive,
           score: acc.score || 0,
           matchScore: acc.match_score || 0,
           matchReason: acc.match_reason || '',
@@ -662,7 +664,10 @@ function GraphVisualizer({ data }) {
     revealedRef.current = revealed;
 
     const applyVisibility = () => {
-      const { hiddenTypes: hidden, minConfidence: minConf, showUnverified: allowUnverified } = filtersRef.current;
+      const {
+        hiddenTypes: hidden, minConfidence: minConf,
+        showUnverified: allowUnverified, showSensitive: allowSensitive,
+      } = filtersRef.current;
       const showAllNodes = revealedRef.current.has('*');
       const visible = new Set();
       const start = performance.now();
@@ -675,6 +680,7 @@ function GraphVisualizer({ data }) {
             const conf = OBSERVATION_TYPES.includes(d.type) ? d.confidence : (d.severity || d.confidence);
             if (conf !== undefined && confidenceRank(conf) < confidenceRank(minConf)) vis = false;
           }
+          if (vis && d.type === 'account' && d.sensitive && !allowSensitive) vis = false;
           if (vis && d.type === 'account' && !allowUnverified) {
             // Новые сканы: по умолчанию только existence=confirmed.
             // Старые сохранённые графы без поля existence — прежнее правило.
@@ -767,6 +773,8 @@ function GraphVisualizer({ data }) {
           Type: 'Actor',
           Confidence: node.confidence,
           Accounts: (node.accounts || []).length,
+          Signals: data.actor?.signals || [],
+          SensitiveAccounts: data.actor?.sensitive_accounts || [],
           Input: data.input_type,
           ScanID: data.scan_id || 'n/a',
           SchemaVersion: data.schema_version || 'n/a',
@@ -793,6 +801,7 @@ function GraphVisualizer({ data }) {
           HTTPStatus: node.httpStatus,
           HTTPError: node.httpError,
           EvidenceURLs: node.evidenceUrls,
+          Sensitive: node.sensitive,
           Score: node.score,
           MatchScore: node.matchScore,
           MatchReason: node.matchReason,
@@ -1105,6 +1114,14 @@ function GraphVisualizer({ data }) {
               onChange={() => setShowUnverified(v => !v)}
             />
             show unverified / single-source accounts
+          </label>
+          <label className="filter-item">
+            <input
+              type="checkbox"
+              checked={showSensitive}
+              onChange={() => setShowSensitive(v => !v)}
+            />
+            show sensitive accounts
           </label>
           <button className="graph-toolbar-btn" onClick={() => { revealedRef.current.add('*'); applyVisibilityRef.current?.(); }}>
             [ SHOW ALL ]

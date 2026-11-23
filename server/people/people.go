@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"stare/server/scanner"
 )
@@ -78,9 +79,12 @@ type Account struct {
 	PageMarker   string   `json:"page_marker,omitempty"`
 	PageNegative string   `json:"page_negative,omitempty"`
 	EvidenceURLs []string `json:"evidence_urls,omitempty"`
-	Score        int      `json:"score"`
-	MatchScore   int      `json:"match_score,omitempty"`
-	MatchReason  string   `json:"match_reason,omitempty"`
+	// Sensitive — платформа для взрослых/чувствительные данные.
+	// Такие аккаунты скрыты по умолчанию и не влияют на Actor.
+	Sensitive   bool   `json:"sensitive,omitempty"`
+	Score       int    `json:"score"`
+	MatchScore  int    `json:"match_score,omitempty"`
+	MatchReason string `json:"match_reason,omitempty"`
 }
 
 // RemovedAccount — негативный факт: профиль отдал 404/410.
@@ -125,7 +129,9 @@ type Actor struct {
 	Label      string                 `json:"label"`
 	Confidence scanner.ConfidenceTier `json:"confidence_tier"`
 	Accounts   []string               `json:"accounts"`
-	Signals    []string               `json:"signals,omitempty"`
+	// Signals всегда массив: high выдаётся только при 2+ независимых сигналах.
+	Signals           []string `json:"signals"`
+	SensitiveAccounts []string `json:"sensitive_accounts,omitempty"`
 }
 
 // Result — ответ /api/people и данные для графа.
@@ -311,6 +317,21 @@ func Run(ctx context.Context, target string) Result {
 	if kind == KindProfileURL {
 		res.Accounts = ApplyProfileMatch(ctx, target, res.Accounts)
 	}
+	refreshAccountEvidence(res.Accounts)
+
+	// После верификации добираем name/bio/avatar/links для top-N:
+	// без этих полей Actor не может найти кросс-сигналы.
+	var enriched int
+	var enrichDuration time.Duration
+	res.Accounts, enriched, enrichDuration = EnrichProfiles(ctx, res.Accounts, 10)
+	refreshAccountEvidence(res.Accounts)
+	statuses = append(statuses, CollectorStatus{
+		Name:         "enrichment",
+		Status:       CollectorRan,
+		Observations: enriched,
+		DurationMS:   enrichDuration.Milliseconds(),
+	})
+
 	res.Actor = BuildActor(target, res.Accounts)
 
 	// Kept — сколько финальных аккаунтов реально опирается на коллектор.
@@ -321,6 +342,7 @@ func Run(ctx context.Context, target string) Result {
 			}
 		}
 	}
+	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
 	res.Collectors = statuses
 	res.Versions = collectorVersions(appliedCollectors)
 	res.DurationMS = time.Since(startedAt).Milliseconds()
@@ -446,11 +468,6 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		} else if collectorVerified {
 			verification = VerificationCollector
 		}
-		score := accountScore(obs.Confidence, collectorVerified, link, handle, obs.Source)
-		if provider {
-			score = 95
-		}
-
 		key := platform + "|" + strings.ToLower(handle)
 		acc, ok := byKey[key]
 		if !ok {
@@ -464,8 +481,8 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 				VerificationSource: verificationSource(verification, obs.Source),
 				Existence:          existence,
 				Provider:           provider,
+				Sensitive:          isSensitivePlatform(platform),
 				URLValid:           true,
-				Score:              score,
 			}
 			if link != "" {
 				acc.EvidenceURLs = []string{link}
@@ -478,9 +495,7 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		if confidenceRank(obs.Confidence) > confidenceRank(acc.Confidence) {
 			acc.Confidence = obs.Confidence
 		}
-		if score > acc.Score {
-			acc.Score = score
-		}
+		acc.Sensitive = acc.Sensitive || isSensitivePlatform(platform)
 		acc.Provider = acc.Provider || provider
 		if provider {
 			acc.Existence = ExistenceConfirmed
@@ -540,29 +555,14 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 			return acc.EvidenceURLs[i] < acc.EvidenceURLs[j]
 		})
 		acc.MultiSource = len(acc.Sources) > 1
-		if !acc.MultiSource && !acc.Provider {
-			// Одиночное эвристическое совпадение не должно выглядеть как факт.
-			acc.Score -= 15
-			if acc.Score < 0 {
-				acc.Score = 0
-			}
-		}
-		// До HTTP-проверки подтверждённым считается только provider.
-		// Всё остальное — unknown и low, даже если коллектор поставил verified.
-		if acc.Existence == ExistenceConfirmed {
-			acc.Verified = true
-			if acc.Confidence == scanner.ConfidenceLow {
-				acc.Confidence = scanner.ConfidenceMedium
-			}
-		} else {
-			acc.Verified = false
-			acc.Confidence = scanner.ConfidenceLow
-		}
-		// Отсекаем явный мусор: неподтверждённые записи с низким score
-		// (корневые URL, несовпадение handle, слабые эвристики).
-		if !acc.Verified && acc.Score < 30 {
-			continue
-		}
+		acc.Sensitive = acc.Sensitive || isSensitivePlatform(acc.Platform)
+		acc.Score = computeAccountScore(*acc)
+		// Tier выводится из доказательств, а не из уверенности источника:
+		// high требует confirmed + provider/multi-source; blocked/unknown — low.
+		acc.Confidence = evidenceTier(*acc)
+		acc.Verified = acc.Existence == ExistenceConfirmed
+		// Оставляем всё, что прошло URL-фильтр: blocked/unknown должны быть
+		// видны в отчёте как негативные факты, а не исчезать.
 		accounts = append(accounts, *acc)
 	}
 	sort.Slice(accounts, func(i, j int) bool {
@@ -623,30 +623,84 @@ func betterName(current, candidate string) bool {
 	return len(candidate) > len(current) && strings.Contains(candidate, " ")
 }
 
-func accountScore(confidence scanner.ConfidenceTier, verified bool, link, handle, source string) int {
-	score := 25
-	switch confidence {
-	case scanner.ConfidenceHigh:
-		score = 65
-	case scanner.ConfidenceMedium:
-		score = 45
+// Веса score-модели (сумма ограничена 40):
+//
+//	API/verified: profile, githubuser, gitlab, keybase, microsoft, pgp, gravatar — 12
+//	CLI-поиск:    maigret — 8, sherlock/blackbird — 6
+//	эвристики:    whatsmyname, holehe, breach-источники — 4
+//	телефон:      phone/phoneinfoga — 6
+//
+// Далее: +25 confirmed, -25 blocked, -10 unknown, +5 reachable,
+// +5 handle в URL, +4 за каждое непустое поле профиля (name/bio/avatar/links),
+// +30 provider, +match_score/10. Итог ограничен 0..100.
+func sourceWeight(source string) int {
+	switch source {
+	case "profile", "githubuser", "gitlab", "keybase", "microsoft", "pgp", "gravatar":
+		return 12
+	case "maigret":
+		return 8
+	case "sherlock", "blackbird":
+		return 6
+	case "phone", "phoneinfoga":
+		return 6
+	case "whatsmyname", "holehe", "xposedornot", "hudsonrock", "ghunt":
+		return 4
+	case "disify":
+		return 3
+	default:
+		return 5
 	}
-	if verified {
+}
+
+func computeAccountScore(acc Account) int {
+	score := 5
+	weight := 0
+	for _, source := range acc.Sources {
+		weight += sourceWeight(source)
+	}
+	if weight > 40 {
+		weight = 40
+	}
+	score += weight
+
+	switch acc.Existence {
+	case ExistenceConfirmed:
 		score += 25
-	}
-	lowerLink := strings.ToLower(link)
-	if link == "" {
+	case ExistenceBlocked:
+		score -= 25
+	case ExistenceUnknown:
 		score -= 10
-	} else if strings.Contains(lowerLink, strings.ToLower(handle)) {
-		score += 10
-	} else {
-		score -= 15
 	}
-	if isRootOrLoginURL(link) {
-		score -= 30
+	if acc.URLReachable {
+		score += 5
 	}
-	if source == "whatsmyname" {
-		score -= 10
+	if acc.URL != "" {
+		if strings.Contains(strings.ToLower(acc.URL), strings.ToLower(acc.Handle)) {
+			score += 5
+		} else {
+			score -= 5
+		}
+	}
+	if acc.Name != "" {
+		score += 4
+	}
+	if acc.Bio != "" {
+		score += 4
+	}
+	if acc.Avatar != "" {
+		score += 4
+	}
+	switch {
+	case len(acc.Links) >= 2:
+		score += 8
+	case len(acc.Links) == 1:
+		score += 4
+	}
+	if acc.Provider {
+		score += 30
+	}
+	if acc.MatchScore > 0 {
+		score += acc.MatchScore / 10
 	}
 	if score < 0 {
 		score = 0
@@ -655,6 +709,27 @@ func accountScore(confidence scanner.ConfidenceTier, verified bool, link, handle
 		score = 100
 	}
 	return score
+}
+
+// refreshAccountEvidence пересчитывает score/tier после изменения полей
+// (semantic match, enrichment) — формула всегда одна и та же.
+func refreshAccountEvidence(accounts []Account) {
+	for i := range accounts {
+		accounts[i].Score = computeAccountScore(accounts[i])
+		accounts[i].Confidence = evidenceTier(accounts[i])
+		accounts[i].Verified = accounts[i].Existence == ExistenceConfirmed
+	}
+}
+
+// evidenceTier — уверенность, которую можно защитить перед клиентом.
+func evidenceTier(acc Account) scanner.ConfidenceTier {
+	if acc.Existence != ExistenceConfirmed {
+		return scanner.ConfidenceLow
+	}
+	if acc.Provider || acc.MultiSource {
+		return scanner.ConfidenceHigh
+	}
+	return scanner.ConfidenceMedium
 }
 
 func isRootOrLoginURL(link string) bool {
@@ -677,39 +752,175 @@ func isRootOrLoginURL(link string) bool {
 }
 
 // BuildActor строит гипотезу Actor. Confidence не выше самого сильного доказательства.
+// BuildActor описывает кластер подтверждённых аккаунтов одного хэндла.
+// Это не «человек»: high выдаётся только при 2+ независимых кросс-сигналах
+// (имя, аватар, общая ссылка), а sensitive-аккаунты не влияют на tier.
 func BuildActor(target string, accounts []Account) *Actor {
 	if len(accounts) == 0 {
 		return nil
 	}
-	best := scanner.ConfidenceLow
-	label := strings.TrimSpace(target)
-	bestNamedRank := -1
-	ids := make([]string, 0, len(accounts))
+
+	confirmed := make([]Account, 0, len(accounts))
+	sensitiveIDs := make([]string, 0)
 	for _, acc := range accounts {
-		ids = append(ids, acc.ID)
-		rank := confidenceRank(acc.Confidence)
-		if rank > confidenceRank(best) {
-			best = acc.Confidence
+		if acc.Sensitive {
+			sensitiveIDs = append(sensitiveIDs, acc.ID)
+			continue
 		}
-		if acc.Name != "" && rank > bestNamedRank {
+		if acc.Existence == ExistenceConfirmed {
+			confirmed = append(confirmed, acc)
+		}
+	}
+	sort.Strings(sensitiveIDs)
+
+	label := actorLabel(target)
+	named := false
+	ids := make([]string, 0, len(confirmed))
+	for _, acc := range confirmed {
+		ids = append(ids, acc.ID)
+		if acc.Name != "" && (!named || len(acc.Name) > len(label)) {
 			label = acc.Name
-			bestNamedRank = rank
+			named = true
 		}
 	}
 	sort.Strings(ids)
 
-	if label == strings.TrimSpace(target) {
-		if _, handle, ok := ParseProfileURL(target); ok {
-			label = handle
-		}
+	signals := actorSignals(confirmed, target)
+	confidence := scanner.ConfidenceLow
+	if len(confirmed) > 0 {
+		confidence = scanner.ConfidenceMedium
+	}
+	if len(confirmed) >= 2 && len(signals) >= 2 {
+		confidence = scanner.ConfidenceHigh
 	}
 
 	return &Actor{
-		ID:         "actor:" + strings.ToLower(strings.TrimSpace(target)),
-		Label:      label,
-		Confidence: best,
-		Accounts:   ids,
+		ID:                actorID(target),
+		Label:             label,
+		Confidence:        confidence,
+		Accounts:          ids,
+		Signals:           signals,
+		SensitiveAccounts: sensitiveIDs,
 	}
+}
+
+func actorLabel(target string) string {
+	if _, handle, ok := ParseProfileURL(target); ok {
+		return handle
+	}
+	value := strings.TrimSpace(target)
+	if i := strings.IndexByte(value, '@'); i > 0 {
+		return value[:i]
+	}
+	return value
+}
+
+var actorIDRe = regexp.MustCompile(`[^a-z0-9._@+-]+`)
+
+// actorID нормализует сырой ввод: profile_url → handle, email → адрес,
+// real_name → slug. Сырой URL в id больше не попадает.
+func actorID(target string) string {
+	if _, handle, ok := ParseProfileURL(target); ok {
+		return "actor:" + strings.ToLower(handle)
+	}
+	value := strings.ToLower(strings.TrimSpace(target))
+	if strings.Contains(value, "@") {
+		return "actor:" + value
+	}
+	value = strings.Trim(actorIDRe.ReplaceAllString(value, "-"), "-")
+	if value == "" {
+		value = "unknown"
+	}
+	return "actor:" + value
+}
+
+func actorSignals(accounts []Account, target string) []string {
+	set := map[string]struct{}{}
+	names := map[string]int{}
+	avatars := map[string]int{}
+	links := map[string]int{}
+
+	for _, acc := range accounts {
+		name := normalizeSignalName(acc.Name)
+		if name != "" && name != normalizeSignalName(acc.Handle) {
+			names[name]++
+		}
+		if avatar := normalizeSignalAvatar(acc.Avatar); avatar != "" {
+			avatars[avatar]++
+		}
+		for _, link := range acc.Links {
+			if key := normalizeSignalLink(link); key != "" {
+				links[key]++
+			}
+		}
+	}
+	addRepeated := func(signal string, values map[string]int) {
+		for _, count := range values {
+			if count >= 2 {
+				set[signal] = struct{}{}
+				return
+			}
+		}
+	}
+	addRepeated("same_name", names)
+	addRepeated("same_avatar", avatars)
+	addRepeated("shared_link", links)
+
+	if _, _, ok := ParseProfileURL(target); ok {
+		for _, acc := range accounts {
+			if acc.MatchScore >= 50 {
+				set["profile_match"] = struct{}{}
+				break
+			}
+		}
+	}
+
+	out := make([]string, 0, len(set))
+	for signal := range set {
+		out = append(out, signal)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeSignalName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	space := false
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteRune(r)
+			space = false
+		} else {
+			space = true
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func normalizeSignalAvatar(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	if u, err := url.Parse(value); err == nil && u.Hostname() != "" {
+		return u.Scheme + "://" + strings.TrimPrefix(u.Hostname(), "www.") + strings.TrimSuffix(u.Path, "/")
+	}
+	return strings.TrimSuffix(value, "/")
+}
+
+func normalizeSignalLink(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	if u, err := url.Parse(value); err == nil && u.Hostname() != "" {
+		return strings.TrimPrefix(u.Hostname(), "www.") + strings.TrimSuffix(u.Path, "/")
+	}
+	return strings.TrimSuffix(value, "/")
 }
 
 // verificationRank задаёт приоритет доказательства при merge.

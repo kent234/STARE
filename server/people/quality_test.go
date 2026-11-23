@@ -34,11 +34,54 @@ func TestNormalizeCanonicalAndRegistrations(t *testing.T) {
 	}
 }
 
-func TestVerifiedScoresHigher(t *testing.T) {
-	unverified := accountScore(scanner.ConfidenceMedium, false, "https://site.example/john", "john", "sherlock")
-	verified := accountScore(scanner.ConfidenceMedium, true, "https://site.example/john", "john", "githubuser")
+func TestConfirmedScoresHigher(t *testing.T) {
+	base := Account{
+		Handle: "john", URL: "https://site.example/john", URLValid: true,
+		Sources: []string{"sherlock"}, Existence: ExistenceUnknown,
+	}
+	unverified := computeAccountScore(base)
+	base.Existence = ExistenceConfirmed
+	base.URLReachable = true
+	verified := computeAccountScore(base)
 	if verified <= unverified {
-		t.Fatalf("verified score %d should exceed unverified %d", verified, unverified)
+		t.Fatalf("confirmed score %d should exceed unknown %d", verified, unverified)
+	}
+}
+
+func TestMultiSourceOutranksSingle(t *testing.T) {
+	single := Account{Handle: "john", URL: "https://site.example/john", URLValid: true,
+		Sources: []string{"sherlock"}, Existence: ExistenceConfirmed, URLReachable: true}
+	multi := single
+	multi.Sources = []string{"sherlock", "maigret", "whatsmyname", "blackbird"}
+	multi.MultiSource = true
+	if computeAccountScore(multi) <= computeAccountScore(single) {
+		t.Fatalf("multi-source score %d must exceed single %d", computeAccountScore(multi), computeAccountScore(single))
+	}
+}
+
+func TestEvidenceTier(t *testing.T) {
+	blocked := Account{Existence: ExistenceBlocked, MultiSource: true, Provider: true}
+	if got := evidenceTier(blocked); got != scanner.ConfidenceLow {
+		t.Fatalf("blocked tier = %q", got)
+	}
+	single := Account{Existence: ExistenceConfirmed}
+	if got := evidenceTier(single); got != scanner.ConfidenceMedium {
+		t.Fatalf("single confirmed tier = %q", got)
+	}
+	multi := Account{Existence: ExistenceConfirmed, MultiSource: true}
+	if got := evidenceTier(multi); got != scanner.ConfidenceHigh {
+		t.Fatalf("multi confirmed tier = %q", got)
+	}
+}
+
+func TestSensitivePlatforms(t *testing.T) {
+	for _, platform := range []string{"Pornhub", "pornhub", "OnlyFans (User)", "tinder"} {
+		if !isSensitivePlatform(platform) {
+			t.Errorf("%q must be sensitive", platform)
+		}
+	}
+	if isSensitivePlatform("github") {
+		t.Fatal("github must not be sensitive")
 	}
 }
 

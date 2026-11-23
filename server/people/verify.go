@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"stare/server/scanner"
 )
 
 // profileFetch — минимальный снимок HTTP-ответа для проверки профиля.
@@ -49,6 +47,8 @@ func VerifyAccountURLs(ctx context.Context, accounts []Account) ([]Account, []Re
 			if acc.VerificationSource == "" {
 				acc.VerificationSource = "provider"
 			}
+			acc.Score = computeAccountScore(*acc)
+			acc.Confidence = evidenceTier(*acc)
 			continue
 		}
 		if acc.Verification == VerificationHTTP || acc.URL == "" || !acc.URLValid {
@@ -181,28 +181,11 @@ func applyExistence(acc *Account) {
 		acc.Verified = true
 		acc.Verification = VerificationHTTP
 		acc.VerificationSource = "http"
-		acc.Score += 10
-		if acc.Score > 100 {
-			acc.Score = 100
-		}
-		if confidenceRank(acc.Confidence) < confidenceRank(scanner.ConfidenceMedium) {
-			acc.Confidence = scanner.ConfidenceMedium
-		}
-	case ExistenceBlocked:
+	default:
 		acc.Verified = false
-		acc.Confidence = scanner.ConfidenceLow
-		acc.Score -= 20
-	case ExistenceUnknown:
-		acc.Verified = false
-		acc.Confidence = scanner.ConfidenceLow
-		acc.Score -= 10
-	case ExistenceAbsent:
-		acc.Verified = false
-		acc.Confidence = scanner.ConfidenceLow
 	}
-	if acc.Score < 0 {
-		acc.Score = 0
-	}
+	acc.Score = computeAccountScore(*acc)
+	acc.Confidence = evidenceTier(*acc)
 }
 
 // evaluateProfilePage отличает реальный профиль от soft-404/login-wall.

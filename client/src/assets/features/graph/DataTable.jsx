@@ -8,19 +8,22 @@ import './DataTable.css';
 
 function PeopleTable({ data }) {
   const [showLow, setShowLow] = useState(false);
+  const [showSensitive, setShowSensitive] = useState(false);
   const allAccounts = data.accounts || [];
+  const sensitiveAccounts = allAccounts.filter(acc => acc.sensitive);
   const accounts = allAccounts.filter(acc => (
-    showLow || (data.input_type === 'profile_url'
+    !acc.sensitive && (showLow || (data.input_type === 'profile_url'
       ? (acc.match_score || 0) >= 50
       : (acc.existence
         ? acc.existence === 'confirmed'
-        : (acc.verified || (acc.sources || []).length >= 2)))
+        : (acc.verified || (acc.sources || []).length >= 2))))
   ));
   const registrations = data.registrations || [];
   const removed = data.removed || [];
   const collectors = data.collectors || [];
   const versions = Object.entries(data.versions || {});
-  const hasAny = accounts.length || registrations.length || removed.length || collectors.length
+  const signals = data.actor?.signals || [];
+  const hasAny = allAccounts.length || registrations.length || removed.length || collectors.length
     || (data.breaches || []).length || data.phone;
 
   return (
@@ -65,6 +68,19 @@ function PeopleTable({ data }) {
             <input type="checkbox" checked={showLow} onChange={() => setShowLow(v => !v)} />
             show low-confidence / unverified
           </label>
+          {sensitiveAccounts.length > 0 && (
+            <label className="filter-item" style={{ marginLeft: '16px' }}>
+              <input type="checkbox" checked={showSensitive} onChange={() => setShowSensitive(v => !v)} />
+              show sensitive accounts ({sensitiveAccounts.length})
+            </label>
+          )}
+          {data.actor && (
+            <div className="obs-summary" style={{ marginTop: '6px' }}>
+              actor {data.actor.id} · confidence {data.actor.confidence_tier} ·
+              {' '}signals: {signals.length ? signals.join(', ') : 'none'}
+              {sensitiveAccounts.length ? ' · sensitive accounts do not affect actor' : ''}
+            </div>
+          )}
         </div>
         <table className="terminal-table">
           <thead>
@@ -106,6 +122,26 @@ function PeopleTable({ data }) {
           </tbody>
         </table>
       </div>
+
+      {showSensitive && sensitiveAccounts.length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">SENSITIVE PLATFORMS <span>{sensitiveAccounts.length} · hidden by default</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>PLATFORM</th><th>HANDLE</th><th>SOURCES</th><th>EXISTENCE</th><th>URL</th></tr></thead>
+            <tbody>
+              {sensitiveAccounts.map(acc => (
+                <tr key={acc.id} className="data-row">
+                  <td className="vuln-name">{acc.platform}</td>
+                  <td>{acc.handle}</td>
+                  <td className="obs-source">{(acc.sources || []).join(', ')}</td>
+                  <td>{acc.existence || 'unknown'}</td>
+                  <td className="clickable-cell">{acc.url || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {collectors.length > 0 && (
         <div className="table-section">

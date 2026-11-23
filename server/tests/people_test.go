@@ -92,17 +92,58 @@ func TestNormalizeBreachAndPhone(t *testing.T) {
 }
 
 func TestBuildActorConfidence(t *testing.T) {
+	// Без кросс-сигналов кластер не может быть high, даже если источники разные.
+	noSignals := people.BuildActor("John", []people.Account{
+		{ID: "account:github:john", Existence: people.ExistenceConfirmed},
+		{ID: "account:reddit:john", Existence: people.ExistenceConfirmed},
+	})
+	if noSignals == nil || noSignals.Confidence != scanner.ConfidenceMedium {
+		t.Fatalf("no-signal actor = %+v", noSignals)
+	}
+
+	// Два независимых сигнала (имя + аватар) дают high.
+	withSignals := people.BuildActor("John", []people.Account{
+		{ID: "account:github:john", Existence: people.ExistenceConfirmed, Name: "John Smith", Avatar: "https://cdn.example/a.png"},
+		{ID: "account:reddit:john", Existence: people.ExistenceConfirmed, Name: "John Smith", Avatar: "https://cdn.example/a.png"},
+	})
+	if withSignals == nil || withSignals.Confidence != scanner.ConfidenceHigh {
+		t.Fatalf("signal actor = %+v", withSignals)
+	}
+	if len(withSignals.Signals) < 2 {
+		t.Fatalf("signals = %v", withSignals.Signals)
+	}
+	if len(withSignals.Accounts) != 2 {
+		t.Fatalf("accounts = %v", withSignals.Accounts)
+	}
+	if withSignals.ID != "actor:john" {
+		t.Fatalf("actor id = %q", withSignals.ID)
+	}
+}
+
+func TestBuildActorExcludesSensitive(t *testing.T) {
 	actor := people.BuildActor("John", []people.Account{
-		{ID: "account:github:john", Confidence: scanner.ConfidenceMedium},
-		{ID: "account:reddit:john", Confidence: scanner.ConfidenceHigh},
+		{ID: "account:github:john", Existence: people.ExistenceConfirmed, Name: "John Smith"},
+		{ID: "account:pornhub:john", Existence: people.ExistenceConfirmed, Name: "John Smith", Sensitive: true},
 	})
 	if actor == nil {
 		t.Fatal("actor is nil")
 	}
-	if actor.Confidence != scanner.ConfidenceHigh {
-		t.Fatalf("actor confidence = %q, want high", actor.Confidence)
-	}
-	if len(actor.Accounts) != 2 {
+	if len(actor.Accounts) != 1 || actor.Accounts[0] != "account:github:john" {
 		t.Fatalf("accounts = %v", actor.Accounts)
+	}
+	if len(actor.SensitiveAccounts) != 1 || actor.SensitiveAccounts[0] != "account:pornhub:john" {
+		t.Fatalf("sensitive = %v", actor.SensitiveAccounts)
+	}
+	if actor.Confidence == scanner.ConfidenceHigh {
+		t.Fatal("sensitive account must not raise actor confidence")
+	}
+}
+
+func TestActorIDFromProfileURL(t *testing.T) {
+	actor := people.BuildActor("https://vk.com/john_doe", []people.Account{
+		{ID: "account:vk:john_doe", Existence: people.ExistenceConfirmed},
+	})
+	if actor == nil || actor.ID != "actor:john_doe" {
+		t.Fatalf("actor = %+v", actor)
 	}
 }

@@ -29,6 +29,15 @@
 | `TestNormalizeVerificationAndCanonicalURL` | API-ссылка пришла раньше профиля; page markers | canonical = `/member/...`, API в `evidence_urls`, existence ещё `unknown` |
 | `TestNormalizeProviderIsConfirmed` | Microsoft provider observation | `provider=true`, `existence=confirmed`, без HTTP |
 | `TestCanonicalURLRanking` | профиль vs API | профиль побеждает независимо от порядка |
+| `TestConfirmedScoresHigher` / `TestMultiSourceOutranksSingle` | confirmed vs unknown, 1 vs 4 источника | score растёт от доказательств и источников |
+| `TestEvidenceTier` | blocked, single confirmed, multi confirmed | low / medium / high |
+| `TestSensitivePlatforms` | Pornhub/OnlyFans/tinder vs github | чувствительные помечаются |
+
+## `enrich_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestEnrichProfiles` | OG title/description/image + ссылка; sensitive/blocked рядом | обогащён только confirmed-аккаунт, остальные не меняются |
 
 ## `meta_test.go`
 

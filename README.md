@@ -154,6 +154,10 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 - `http_attempted`, `http_status`, `http_error`, `url_reachable` показывают, что именно произошло; `PEOPLE_VERIFY_MAX` ограничивает число проверок (по умолчанию 200).
 - Canonical URL выбирается по рангу: профиль > обычная страница > API; все варианты сохраняются в `evidence_urls` (например, `api.chess.com` остаётся evidence, а не ссылкой профиля).
 - Наблюдаемость: `schema_version`, `scan_id`, `duration_ms`, `collectors[]` (`ran/missing/error`, observations/kept/duration) и `versions` установленных CLI. «Не установлен» и «ничего не нашёл» различимы в JSON и UI.
+- Score прозрачен: веса источников (API > CLI > эвристики), бонус `confirmed`/`url_reachable`/полноты профиля, штрафы `blocked/unknown`; формула описана в `computeAccountScore`.
+- `Actor` — кластер хэндла, не «человек»: `high` только при 2+ независимых сигналах (`same_name`, `same_avatar`, `shared_link`, `profile_match`); `actor.id` нормализован (profile URL → handle, real name → slug).
+- Top-N подтверждённых аккаунтов обогащаются OG-метаданными (name/bio/avatar/links) — без этого кросс-сигналы невозможны.
+- `sensitive`-платформы (Pornhub, OnlyFans, dating и т.п.) скрыты по умолчанию, не входят в Actor и показываются отдельной секцией только по чекбоксу.
 - **Maigret по умолчанию работает без лимита сайтов**; `MAIGRET_MAX_SITES=0` (или пусто) = весь список, число — ограничение для быстрого режима.
 - Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники и считает `score`. По умолчанию показываются только `existence=confirmed`; остальное — через `show low-confidence / unverified`.
 

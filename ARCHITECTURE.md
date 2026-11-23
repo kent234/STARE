@@ -62,6 +62,12 @@ observations, HTTP/TLS, vulnerabilities, buckets and errors.
 pipeline exposes the same idea via `collectors[]`, CLI `versions`, `scan_id`
 and `duration_ms`.
 
+People scoring is evidence-based: source weights + `confirmed/blocked/unknown`
++ profile completeness; `Actor` is a handle cluster with `signals[]`
+(`same_name`, `same_avatar`, `shared_link`, `profile_match`) and becomes `high`
+only with 2+ independent signals. Sensitive platforms are flagged, hidden by
+default and excluded from the actor tier.
+
 All external tools are optional: missing binary = source skipped, scan continues.
 Paths: `SUBFINDER_BIN`, `HTTPX_BIN`, `NAABU_BIN`, `TLSX_BIN`, `KATANA_BIN`.
 

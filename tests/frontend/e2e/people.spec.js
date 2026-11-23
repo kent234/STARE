@@ -173,8 +173,29 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
         provider: true,
         score: 95,
       },
+      {
+        id: 'account:pornhub:test',
+        platform: 'pornhub',
+        handle: 'test',
+        url: 'https://www.pornhub.com/users/test',
+        sources: ['maigret'],
+        confidence_tier: 'high',
+        verified: true,
+        url_valid: true,
+        existence: 'confirmed',
+        verification: 'http',
+        sensitive: true,
+        score: 60,
+      },
     ],
-    actor: { id: 'actor:test@example.com', label: email, confidence_tier: 'high', accounts: ['account:microsoft:test@example.com'] },
+    actor: {
+      id: 'actor:test@example.com',
+      label: email,
+      confidence_tier: 'high',
+      accounts: ['account:microsoft:test@example.com'],
+      signals: ['same_name', 'same_avatar'],
+      sensitive_accounts: ['account:pornhub:test'],
+    },
     registrations: [
       { platform: 'office365.com', email, source: 'holehe', confidence_tier: 'low' },
     ],
@@ -220,4 +241,9 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
   await expect(page.locator('.table-wrapper')).toContainText('COLLECTORS');
   await expect(page.locator('.table-wrapper')).toContainText('scan-e2e-email');
   await expect(page.locator('.table-wrapper')).toContainText('missing');
+  // Sensitive-платформы скрыты по умолчанию и не влияют на actor.
+  await expect(page.locator('.table-wrapper')).not.toContainText('pornhub');
+  await page.getByLabel(/show sensitive accounts/).check();
+  await expect(page.locator('.table-wrapper')).toContainText('pornhub');
+  await expect(page.locator('.table-wrapper')).toContainText('SENSITIVE PLATFORMS');
 });
