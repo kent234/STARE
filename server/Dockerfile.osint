@@ -10,9 +10,12 @@ ENV GOSUMDB=off
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-ARG WITH_PD_TOOLS=0
+ARG WITH_PD_TOOLS=1
+ARG PD_TOOLS_REV=2
 RUN mkdir -p /out
 RUN if [ "$WITH_PD_TOOLS" = "1" ]; then \
+      echo "pd-tools-rev=$PD_TOOLS_REV" && \
+      export CGO_ENABLED=0 && \
       GOBIN=/out go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
       GOBIN=/out go install github.com/projectdiscovery/httpx/cmd/httpx@latest && \
       GOBIN=/out go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
@@ -75,6 +78,10 @@ RUN case "${TARGETARCH:-$(uname -m)}" in \
  && chmod +x /usr/local/bin/nuclei \
  && rm -f /tmp/nuclei.zip \
  && nuclei -update-templates
+
+# musl loader нужен для naabu, собранного в Alpine builder.
+RUN apt-get update && apt-get install -y --no-install-recommends musl \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/osint/bin:${PATH}" \
     SHERLOCK_BIN=/usr/local/bin/sherlock \
