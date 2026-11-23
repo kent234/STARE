@@ -8,10 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:graph": "playwright test tests/graph-ui.spec.js",
-    "bench:graph": "BENCH_OUT=optimized.json playwright test tests/graph.spec.js",
-    "test:people": "playwright test tests/people.spec.js",
-    "test:e2e": "playwright test"
+    "test:unit": "node --test ../tests/frontend/unit/*.test.mjs"
   },
   "dependencies": {
     "ascii-globe": "^0.5.0",

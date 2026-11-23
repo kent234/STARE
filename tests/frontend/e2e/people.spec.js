@@ -135,3 +135,63 @@ test('username investigation renders accounts and details', async ({ page }) => 
   await expect(panel).toContainText(/source/i);
   await expect(panel).toContainText(/confidence/i);
 });
+
+
+test('email MVP shows Microsoft account and email intelligence', async ({ page }) => {
+  const email = 'test@example.com';
+  const emailFixture = {
+    target: email,
+    kind: 'people',
+    input_type: 'email',
+    fetched_at: '2026-01-01T00:00:00Z',
+    observations: [],
+    accounts: [
+      {
+        id: 'account:microsoft:test@example.com',
+        platform: 'microsoft',
+        handle: email,
+        url: 'https://login.microsoftonline.com/',
+        sources: ['microsoft'],
+        confidence_tier: 'high',
+        verified: true,
+        url_valid: true,
+        score: 95,
+      },
+    ],
+    actor: { id: 'actor:test@example.com', label: email, confidence_tier: 'high', accounts: ['account:microsoft:test@example.com'] },
+    registrations: [
+      { platform: 'office365.com', email, source: 'holehe', confidence_tier: 'low' },
+    ],
+    email: {
+      email, domain: 'example.com', format: true, dns: true, disposable: false,
+      role: false, free: true, whitelist: false, mx: ['mx.example.com'],
+    },
+    breaches: [],
+    phone: null,
+    errors: [],
+  };
+
+  await page.addInitScript(() => localStorage.setItem('stare_token', 'e2e'));
+  await page.route('**/api/people', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(emailFixture),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: '[ EXECUTE ]' }).click();
+  await page.locator('.terminal-input').fill(email);
+  await page.getByRole('button', { name: '[ EXECUTE ]' }).click();
+
+  await page.waitForFunction(
+    () => window.__cy && window.__cy.nodes().filter(n => n.data('type') === 'account').length >= 1,
+    null,
+    { timeout: 60000 }
+  );
+
+  await page.getByRole('button', { name: '[ TABLE ]' }).click();
+  await expect(page.locator('.table-wrapper')).toContainText('EMAIL INTELLIGENCE');
+  await expect(page.locator('.table-wrapper')).toContainText('mx.example.com');
+  await expect(page.locator('.table-wrapper')).toContainText('microsoft');
+  await expect(page.locator('.table-wrapper')).toContainText('office365.com');
+});

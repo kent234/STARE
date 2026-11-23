@@ -82,6 +82,9 @@ const NODE_FILTERS = [
   ['info', 'Info'],
   ['vulnerability', 'Nuclei vuln'],
   ['vuln-group', 'Vuln group'],
+  ['http', 'HTTP probe'],
+  ['bucket', 'Cloud bucket'],
+  ['threat-hit', 'Threat hit'],
   ['actor', 'Actor'],
   ['account', 'Account'],
   ['registration', 'Registration'],
@@ -243,6 +246,32 @@ function GraphVisualizer({ data }) {
           addNode(portId, `:${port}`, isRisky ? 'risky-port' : 'port');
           link(ip, portId);
         });
+      });
+    }
+
+    if (!isPeople) {
+      (data.http || []).slice(0, 100).forEach((probe, i) => {
+        const id = `http:${i}`;
+        addNode(id, `${probe.status_code || '?'} ${probe.url || probe.input}`, 'http', {
+          url: probe.url,
+          title: probe.title,
+          status: probe.status_code,
+          webserver: probe.webserver,
+          technologies: probe.technologies,
+          tls: probe.tls,
+        });
+        link(data.target, id, 'http');
+      });
+      (data.threat_hits || []).forEach((hit, i) => {
+        const id = `threat:${i}`;
+        addNode(id, hit.indicator, 'threat-hit', { source: hit.source, detail: hit.detail });
+        const matched = matchIndex.get(normalizeIndicator(hit.indicator));
+        link(matched || data.target, id, 'match', 'threat');
+      });
+      (data.cloud_buckets || []).forEach((bucket, i) => {
+        const id = `bucket:${bucket.provider}:${bucket.name}:${i}`;
+        addNode(id, `${bucket.provider}:${bucket.name}`, 'bucket', bucket);
+        link(data.target, id, 'bucket');
       });
     }
 
@@ -492,6 +521,30 @@ function GraphVisualizer({ data }) {
         },
       },
       {
+        selector: 'node[type="http"]',
+        style: {
+          shape: 'round-rectangle', width: '130px', height: '24px',
+          'background-color': '#001a22', 'border-color': '#00e5ff',
+          color: '#a0f0ff', 'font-size': '8px',
+        },
+      },
+      {
+        selector: 'node[type="bucket"]',
+        style: {
+          shape: 'round-rectangle', width: '120px', height: '24px',
+          'background-color': '#2a2400', 'border-color': '#ffd400',
+          color: '#ffe680', 'font-size': '8px',
+        },
+      },
+      {
+        selector: 'node[type="threat-hit"]',
+        style: {
+          shape: 'round-rectangle', width: '120px', height: '24px',
+          'background-color': '#2a0008', 'border-color': '#ff003c',
+          color: '#ffb3c1', 'font-size': '8px',
+        },
+      },
+      {
         selector: 'edge',
         style: {
           width: 1,
@@ -512,6 +565,8 @@ function GraphVisualizer({ data }) {
       { selector: 'edge.vuln', style: { 'line-color': '#ff00ff', 'target-arrow-color': '#ff00ff', width: 1.2 } },
       { selector: 'edge.reports', style: { 'line-color': '#665522', 'target-arrow-color': '#665522', width: 0.8 } },
       { selector: 'edge.match', style: { 'line-color': '#00e5ff', 'target-arrow-color': '#00e5ff', 'line-style': 'dashed', width: 1 } },
+      { selector: 'edge.http', style: { 'line-color': '#00e5ff', 'target-arrow-color': '#00e5ff', width: 0.8 } },
+      { selector: 'edge.bucket', style: { 'line-color': '#ffd400', 'target-arrow-color': '#ffd400', width: 0.8 } },
       { selector: 'edge.observed_as', style: { 'line-color': '#00e5ff', 'target-arrow-color': '#00e5ff', width: 1.2 } },
       { selector: 'edge.registered_on', style: { 'line-color': '#888', 'target-arrow-color': '#888', 'line-style': 'dashed', width: 0.8 } },
       { selector: 'edge.leaked_in', style: { 'line-color': '#ff003c', 'target-arrow-color': '#ff003c', width: 1.2 } },
@@ -606,7 +661,7 @@ function GraphVisualizer({ data }) {
           if (vis && d.type === 'account' && !allowUnverified) {
             const strong = data.input_type === 'profile_url'
               ? (d.matchScore || 0) >= 50
-              : (!!d.verified || (d.sources || []).length >= 2 || (d.score || 0) >= 70);
+              : (!!d.verified || (d.sources || []).length >= 2);
             if (!strong) vis = false;
           }
           node.style('display', vis ? 'element' : 'none');
@@ -645,6 +700,9 @@ function GraphVisualizer({ data }) {
       if (node.type === 'actor') return `Actor: ${node.label}`;
       if (node.type === 'account') return `Account: ${node.label}\n${(node.sources || []).join(', ')} · score ${node.score || 0}${node.verified ? ' · verified' : ''}`;
       if (node.type === 'registration') return `Email registration: ${node.platform}`;
+      if (node.type === 'http') return `HTTP ${node.status || '?'}: ${node.url}`;
+      if (node.type === 'bucket') return `Cloud bucket: ${node.provider}/${node.name}`;
+      if (node.type === 'threat-hit') return `Threat feed: ${node.source}`;
       if (node.type === 'breach') return `Breach: ${node.label}`;
       if (node.type === 'phone') return `Phone: ${node.label}`;
       if (node.type === 'vulnerability') return `Vulnerability (${node.severity})\n${node.label}`;
@@ -709,6 +767,12 @@ function GraphVisualizer({ data }) {
           MatchReason: node.matchReason,
           MultiSource: node.multiSource,
         };
+      } else if (node.type === 'http') {
+        info = { Name: node.url, Type: 'HTTP', Status: node.status, Title: node.title, Server: node.webserver, Technologies: node.technologies, TLS: node.tls };
+      } else if (node.type === 'bucket') {
+        info = { Name: node.name, Type: 'Cloud bucket', Provider: node.provider, URL: node.url, Status: node.status, Public: node.public };
+      } else if (node.type === 'threat-hit') {
+        info = { Name: node.label, Type: 'Threat feed hit', Source: node.source, Detail: node.detail };
       } else if (node.type === 'registration') {
         info = {
           Name: node.label,

@@ -1,4 +1,3 @@
-import React from 'react';
 import AsciiEarth from '../../features/asciiEarth/AsciiEarth';
 import GlassButton from '../../components/ui/GlassButton';
 import './StartScreen.css';

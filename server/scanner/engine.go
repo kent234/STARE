@@ -13,33 +13,43 @@ import (
 
 // ScanResult — структура, которую мы отдадим в React
 type ScanResult struct {
-	Target          string              `json:"target"`
-	Subdomains      []string            `json:"subdomains"`
-	SubdomainIPs    map[string][]string `json:"subdomain_ips"`
-	IPs             []string            `json:"ips"`
-	Ports           map[string][]int    `json:"ports"`
-	Banners         map[string]string   `json:"banners"` // НОВОЕ: Баннеры сервисов
-	DNS             ExtendedDNS         `json:"dns"`
-	Whois           map[string]string   `json:"whois"`
-	ASN             map[string]string   `json:"asn"`
-	Artifacts       Artifacts           `json:"artifacts"`
-	Technologies    []string            `json:"technologies"`
-	Observations    []Observation       `json:"observations,omitempty"`
-	Vulnerabilities []NucleiFinding     `json:"vulnerabilities,omitempty"`
-	Errors          []string            `json:"errors"`
-	Duration        string              `json:"duration"`
+	Target              string              `json:"target"`
+	Subdomains          []string            `json:"subdomains"`
+	SubdomainSources    map[string][]string `json:"subdomain_sources,omitempty"`
+	SubdomainConfidence map[string]string   `json:"subdomain_confidence,omitempty"`
+	SubdomainIPs        map[string][]string `json:"subdomain_ips"`
+	IPs                 []string            `json:"ips"`
+	Ports               map[string][]int    `json:"ports"`
+	Banners             map[string]string   `json:"banners"` // НОВОЕ: Баннеры сервисов
+	DNS                 ExtendedDNS         `json:"dns"`
+	Whois               map[string]string   `json:"whois"`
+	ASN                 map[string]string   `json:"asn"`
+	Artifacts           Artifacts           `json:"artifacts"`
+	Technologies        []string            `json:"technologies"`
+	Observations        []Observation       `json:"observations,omitempty"`
+	Vulnerabilities     []NucleiFinding     `json:"vulnerabilities,omitempty"`
+	HTTP                []HTTPProbe         `json:"http,omitempty"`
+	TLS                 []TLSInfo           `json:"tls,omitempty"`
+	Endpoints           []string            `json:"endpoints,omitempty"`
+	CloudBuckets        []CloudBucket       `json:"cloud_buckets,omitempty"`
+	ThreatHits          []ThreatHit         `json:"threat_hits,omitempty"`
+	WildcardDNS         bool                `json:"wildcard_dns,omitempty"`
+	Errors              []string            `json:"errors"`
+	Duration            string              `json:"duration"`
 }
 
 // RunFullScan — выполняет полный цикл разведки и возвращает результат
 func RunFullScan(ctx context.Context, target string) *ScanResult {
 	start := time.Now()
 	result := &ScanResult{
-		Target:       target,
-		Ports:        make(map[string][]int),
-		Banners:      make(map[string]string),
-		ASN:          make(map[string]string),
-		SubdomainIPs: make(map[string][]string),
-		Errors:       []string{},
+		Target:              target,
+		Ports:               make(map[string][]int),
+		Banners:             make(map[string]string),
+		ASN:                 make(map[string]string),
+		SubdomainIPs:        make(map[string][]string),
+		SubdomainSources:    make(map[string][]string),
+		SubdomainConfidence: make(map[string]string),
+		Errors:              []string{},
 	}
 
 	// Очищаем домен (PSL)
@@ -52,10 +62,18 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	addSubdomains := func(subs []string) {
+	addSubdomains := func(source string, subs []string) {
 		mu.Lock()
 		defer mu.Unlock()
-		result.Subdomains = append(result.Subdomains, subs...)
+		for _, sub := range subs {
+			if sub == "" {
+				continue
+			}
+			result.Subdomains = append(result.Subdomains, sub)
+			if !containsString(result.SubdomainSources[sub], source) {
+				result.SubdomainSources[sub] = append(result.SubdomainSources[sub], source)
+			}
+		}
 	}
 
 	// Nuclei: только для доменов, с отдельным таймаутом и изоляцией ошибок.
@@ -79,27 +97,36 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	}()
 
 	// 1. Пассивный сбор (все источники параллельно)
-	sources := []func(context.Context, string) ([]string, error){
-		func(c context.Context, d string) ([]string, error) { return NewCRTShClient().FetchSubdomains(c, d) },
-		FetchCRTName, FetchRapidDNS, FetchHackerTarget,
-		FetchAlienVaultOTX, FetchURLScan, FetchTLSCC,
+	sources := []struct {
+		name string
+		fn   func(context.Context, string) ([]string, error)
+	}{
+		{"crtsh", func(c context.Context, d string) ([]string, error) { return NewCRTShClient().FetchSubdomains(c, d) }},
+		{"crt.name", FetchCRTName},
+		{"rapiddns", FetchRapidDNS},
+		{"hackertarget", FetchHackerTarget},
+		{"otx", FetchAlienVaultOTX},
+		{"urlscan", FetchURLScan},
+		{"tlscc", FetchTLSCC},
+		{"subfinder", RunSubfinder},
 	}
 
-	for _, fn := range sources {
+	for _, source := range sources {
+		source := source
 		wg.Add(1)
-		go func(f func(context.Context, string) ([]string, error)) {
+		go func() {
 			defer wg.Done()
-			subs, err := f(ctx, target)
+			subs, err := source.fn(ctx, target)
 			if err != nil {
 				mu.Lock()
-				result.Errors = append(result.Errors, err.Error())
+				result.Errors = append(result.Errors, source.name+": "+err.Error())
 				mu.Unlock()
 				return
 			}
 			if len(subs) > 0 {
-				addSubdomains(subs)
+				addSubdomains(source.name, subs)
 			}
-		}(fn)
+		}()
 	}
 
 	// 2. DNS, WHOIS и Технологии
@@ -122,6 +149,17 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 
 	wg.Wait()
 	result.Subdomains = uniqueSorted(result.Subdomains)
+	result.WildcardDNS = DetectWildcardDNS(ctx, target)
+	for _, sub := range result.Subdomains {
+		switch {
+		case len(result.SubdomainSources[sub]) >= 2:
+			result.SubdomainConfidence[sub] = "high"
+		case len(result.SubdomainSources[sub]) == 1:
+			result.SubdomainConfidence[sub] = "medium"
+		default:
+			result.SubdomainConfidence[sub] = "low"
+		}
+	}
 
 	// 3. IP-адреса и связь с поддоменами
 	ips := []string{}
@@ -177,17 +215,96 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		result.ASN[ip] = asn
 	}
 
-	// 5. Порты и Баннеры
+	// 4.1. Активные проверки (ProjectDiscovery CLI, если установлены).
+	var wgActive sync.WaitGroup
+	wgActive.Add(1)
+	go func() {
+		defer wgActive.Done()
+		hosts := append([]string{target}, result.Subdomains...)
+		probes, err := RunHTTPX(ctx, hosts)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			result.Errors = append(result.Errors, "httpx: "+err.Error())
+			return
+		}
+		result.HTTP = probes
+		for _, p := range probes {
+			result.Technologies = append(result.Technologies, p.Technologies...)
+		}
+		result.Technologies = uniqueSorted(result.Technologies)
+	}()
+
+	wgActive.Add(1)
+	go func() {
+		defer wgActive.Done()
+		certs, err := RunTLSX(ctx, target)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			result.Errors = append(result.Errors, "tlsx: "+err.Error())
+			return
+		}
+		result.TLS = certs
+	}()
+
+	wgActive.Add(1)
+	go func() {
+		defer wgActive.Done()
+		if net.ParseIP(target) != nil {
+			return
+		}
+		endpoints, err := RunKatana(ctx, "https://"+target)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			result.Errors = append(result.Errors, "katana: "+err.Error())
+			return
+		}
+		result.Endpoints = endpoints
+	}()
+
+	wgActive.Add(1)
+	go func() {
+		defer wgActive.Done()
+		hits, err := FetchThreatFeeds(ctx, target, result.IPs, result.Subdomains)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			result.Errors = append(result.Errors, "threat-feeds: "+err.Error())
+			return
+		}
+		result.ThreatHits = hits
+	}()
+
+	wgActive.Add(1)
+	go func() {
+		defer wgActive.Done()
+		if net.ParseIP(target) != nil {
+			return
+		}
+		buckets := CheckCloudBuckets(ctx, target)
+		mu.Lock()
+		result.CloudBuckets = buckets
+		mu.Unlock()
+	}()
+
+	// 5. Порты: naabu top-1000 + быстрый fallback из 7 частых портов.
 	if len(result.IPs) > 0 {
 		portsClient := NewPortsClient()
-		result.Ports, _ = portsClient.ScanPortsMany(ctx, result.IPs)
+		fallback, _ := portsClient.ScanPortsMany(ctx, result.IPs)
+		fast, _ := RunNaabu(ctx, result.IPs, 1000)
+		result.Ports = mergePorts(fallback, fast)
 
 		var wgBanners sync.WaitGroup
+		bannerSem := make(chan struct{}, 50)
 		for ip, ports := range result.Ports {
 			for _, port := range ports {
 				wgBanners.Add(1)
+				bannerSem <- struct{}{}
 				go func(ipAddr string, p int) {
 					defer wgBanners.Done()
+					defer func() { <-bannerSem }()
 					banner := grabBanner(ctx, ipAddr, p)
 					if banner != "" {
 						mu.Lock()
@@ -200,8 +317,11 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		wgBanners.Wait()
 	}
 
+	wgActive.Wait()
 	wgObs.Wait()
 	wgNuclei.Wait()
+	result.Vulnerabilities = EnrichNucleiWithKEV(ctx, result.Vulnerabilities)
+	result.Vulnerabilities = EnrichNucleiWithEPSS(ctx, result.Vulnerabilities)
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 	return result
 }
@@ -268,4 +388,25 @@ func uniqueSorted(in []string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// mergePorts объединяет результаты naabu и fallback-сканера.
+func mergePorts(base, extra map[string][]int) map[string][]int {
+	out := make(map[string][]int, len(base)+len(extra))
+	for ip, ports := range base {
+		out[ip] = uniquePorts(ports)
+	}
+	for ip, ports := range extra {
+		out[ip] = uniquePorts(append(out[ip], ports...))
+	}
+	return out
+}
+
+func containsString(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }

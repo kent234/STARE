@@ -12,7 +12,7 @@ function PeopleTable({ data }) {
   const accounts = allAccounts.filter(acc => (
     showLow || (data.input_type === 'profile_url'
       ? (acc.match_score || 0) >= 50
-      : (acc.verified || (acc.sources || []).length >= 2 || (acc.score || 0) >= 70))
+      : (acc.verified || (acc.sources || []).length >= 2))
   ));
   const registrations = data.registrations || [];
   const hasAny = accounts.length || registrations.length || (data.breaches || []).length || data.phone;
@@ -23,6 +23,26 @@ function PeopleTable({ data }) {
         <div className="people-empty">
           No public data found for this identifier. Checked free sources: Holehe, XposedOrNot, Hudson Rock, Gravatar, GHunt (if logged in).
           Try a username/profile URL, or install OSINT CLI (Sherlock/Maigret/Blackbird).
+        </div>
+      )}
+
+      {data.email && (
+        <div className="table-section">
+          <h3 className="table-title">EMAIL INTELLIGENCE <span>{data.email.email}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>DOMAIN</th><th>FORMAT</th><th>DNS</th><th>DISPOSABLE</th><th>ROLE</th><th>FREE</th><th>MX</th></tr></thead>
+            <tbody>
+              <tr className="data-row">
+                <td>{data.email.domain || '-'}</td>
+                <td className={data.email.format ? 'safe-status' : 'risky-status'}>{data.email.format ? 'VALID' : 'INVALID'}</td>
+                <td>{String(!!data.email.dns)}</td>
+                <td className={data.email.disposable ? 'risky-status' : 'safe-status'}>{String(!!data.email.disposable)}</td>
+                <td>{String(!!data.email.role)}</td>
+                <td>{String(!!data.email.free)}</td>
+                <td className="obs-summary">{(data.email.mx || []).join(', ') || '-'}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -272,6 +292,93 @@ function DataTable({ data }) {
           </tbody>
         </table>
       </div>
+
+      {(data.http || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">HTTP PROBES <span>{data.http.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>URL</th><th>STATUS</th><th>TITLE</th><th>SERVER</th><th>TECH</th><th>TLS</th></tr></thead>
+            <tbody>
+              {data.http.map((probe, i) => (
+                <tr key={`${probe.url}-${i}`} className="data-row">
+                  <td className="clickable-cell">{probe.url || probe.input}</td>
+                  <td>{probe.status_code || '-'}</td>
+                  <td>{probe.title || '-'}</td>
+                  <td>{probe.webserver || probe.cdn || '-'}</td>
+                  <td className="obs-summary">{(probe.technologies || []).slice(0, 6).join(', ') || '-'}</td>
+                  <td className="obs-summary">{probe.tls ? `${probe.tls.issuer_cn || 'cert'} · ${probe.tls.not_after || ''}` : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(data.tls || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">TLS CERTIFICATES <span>{data.tls.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>HOST</th><th>CN</th><th>ISSUER</th><th>SAN</th><th>NOT AFTER</th><th>STATUS</th></tr></thead>
+            <tbody>
+              {data.tls.map((cert, i) => (
+                <tr key={`${cert.host}-${i}`} className="data-row">
+                  <td>{cert.host || '-'}</td>
+                  <td>{cert.subject_cn || '-'}</td>
+                  <td>{cert.issuer_cn || '-'}</td>
+                  <td className="obs-summary">{(cert.san || []).slice(0, 8).join(', ') || '-'}</td>
+                  <td>{cert.not_after || '-'}</td>
+                  <td className={cert.expired ? 'risky-status' : 'safe-status'}>{cert.expired ? 'EXPIRED' : 'VALID'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(data.endpoints || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">ENDPOINTS (KATANA) <span>{data.endpoints.length}</span></h3>
+          <div className="obs-json">{data.endpoints.slice(0, 500).join('\n')}</div>
+        </div>
+      )}
+
+      {(data.cloud_buckets || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">CLOUD BUCKETS <span>{data.cloud_buckets.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>PROVIDER</th><th>NAME</th><th>STATUS</th><th>ACCESS</th><th>URL</th></tr></thead>
+            <tbody>
+              {data.cloud_buckets.map((bucket, i) => (
+                <tr key={`${bucket.provider}-${bucket.name}-${i}`} className="data-row">
+                  <td>{bucket.provider}</td>
+                  <td>{bucket.name}</td>
+                  <td>{bucket.status}</td>
+                  <td className={bucket.public ? 'risky-status' : 'safe-status'}>{bucket.public ? 'PUBLIC' : 'PRIVATE'}</td>
+                  <td className="clickable-cell">{bucket.url}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(data.threat_hits || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">THREAT FEED HITS <span>{data.threat_hits.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>SOURCE</th><th>INDICATOR</th><th>DETAIL</th></tr></thead>
+            <tbody>
+              {data.threat_hits.map((hit, i) => (
+                <tr key={`${hit.source}-${hit.indicator}-${i}`} className="data-row">
+                  <td className="obs-source">{hit.source}</td>
+                  <td>{hit.indicator}</td>
+                  <td className="obs-summary">{hit.detail || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="table-section">
         <h3 className="table-title">

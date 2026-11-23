@@ -186,6 +186,10 @@ func deleteScanHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if db == nil {
+		http.Error(w, "Database unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing id", http.StatusBadRequest)
@@ -202,10 +206,89 @@ func deleteScanHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Delete failed", http.StatusInternalServerError)
 		return
 	}
-	if target != "" {
+	// Инвалидируем кэш только если Redis реально сконфигурирован.
+	if target != "" && rdb != nil {
 		rdb.Del(r.Context(), "scan:"+target)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteScansRequest — тело bulk-удаления сохранённых графов.
+// ids — конкретные UUID, all=true — очистить всю историю.
+type deleteScansRequest struct {
+	IDs []string `json:"ids"`
+	All bool     `json:"all"`
+}
+
+// deleteScansHandler удаляет несколько сканов одним запросом.
+// Это нужно, чтобы UI не устраивал N отдельных DELETE-запросов
+// при выборе пачки и не оставлял историю частично удалённой.
+func deleteScansHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if db == nil {
+		http.Error(w, "Database unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req deleteScansRequest
+	if r.Body != nil {
+		// Пустое тело допустимо только вместе с all=true.
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if !req.All && len(req.IDs) == 0 {
+		http.Error(w, "Missing ids or all flag", http.StatusBadRequest)
+		return
+	}
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	ctx := r.Context()
+	if req.All {
+		rows, err = db.Query(ctx, "DELETE FROM scans RETURNING target")
+	} else {
+		// id::text — чтобы принимать JSON-массив строк без зависимости от UUID-кодека.
+		rows, err = db.Query(ctx, "DELETE FROM scans WHERE id::text = ANY($1) RETURNING target", req.IDs)
+	}
+	if err != nil {
+		http.Error(w, "Delete failed", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	targets := make(map[string]struct{})
+	deleted := 0
+	for rows.Next() {
+		var target string
+		if err := rows.Scan(&target); err != nil {
+			http.Error(w, "Delete failed", http.StatusInternalServerError)
+			return
+		}
+		deleted++
+		if target != "" {
+			targets[target] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, "Delete failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Сбрасываем кэш scan:<target>, иначе удалённый граф вернётся из Redis.
+	if rdb != nil && len(targets) > 0 {
+		keys := make([]string, 0, len(targets))
+		for target := range targets {
+			keys = append(keys, "scan:"+target)
+		}
+		rdb.Del(ctx, keys...)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int{"deleted": deleted})
 }
 
 func main() {
@@ -218,6 +301,7 @@ func main() {
 	http.HandleFunc("/api/scans", corsMiddleware(listScansHandler))
 	http.HandleFunc("/api/scan/get", corsMiddleware(getScanHandler))
 	http.HandleFunc("/api/scan/delete", corsMiddleware(deleteScanHandler))
+	http.HandleFunc("/api/scans/delete", corsMiddleware(deleteScansHandler))
 	http.HandleFunc("/api/people", corsMiddleware(peopleHandler))
 	http.HandleFunc("/api/auth/register", corsMiddleware(registerHandler))
 	http.HandleFunc("/api/auth/login", corsMiddleware(loginHandler))

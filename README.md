@@ -119,6 +119,7 @@ export NUCLEI_TIMEOUT=5m
    * **Наведите** курсор на узел, чтобы увидеть краткую сводку.
    * **Кликните** на узел (домен, IP или порт), чтобы открыть боковую панель с полными деталями (WHOIS, порты, технологии, баннеры).
    * Перетаскивайте узлы и используйте колесико мыши для зума.
+6. **История сканов** (`[ SAVED.GRAPHS ]` слева): клик загружает сохранённый граф, `[ x ]` удаляет один скан, чекбоксы + `DEL N` — пакетное удаление выбранных, `DEL.ALL` — очистка всей истории.
 
 ---
 
@@ -127,9 +128,11 @@ export NUCLEI_TIMEOUT=5m
 Граф оптимизирован для больших сканов: `fcose`, `pixelRatio: 1`, `hideEdgesOnViewport`, упрощённые стили и progressive disclosure (1 hop). Замеры и методика — в [BENCHMARK.md](BENCHMARK.md).
 
 ```bash
-cd client
+# из корня репозитория
 npm run test:graph    # Playwright: рендер, фильтры, поиск, раскрытие соседей
+npm run test:people   # Playwright: People-OSINT
 npm run bench:graph   # FPS/layout/filter на 5 000+ узлов
+cd client && npm run test:unit   # Node unit-тесты фронтенда
 ```
 
 Рендерер: `VITE_GRAPH_RENDERER=canvas` (по умолчанию), `auto` или `webgl`; при ошибке WebGL автоматически откатывается на canvas.
@@ -140,19 +143,22 @@ npm run bench:graph   # FPS/layout/filter на 5 000+ узлов
 
 - **Ссылка на профиль:** извлекается платформа и handle, забираются OpenGraph/`<title>`/bio/avatar/внешние ссылки, затем handle проверяется по всем остальным платформам.
 - **Username:** Sherlock, Maigret, Blackbird (CLI), WhatsMyName (встроенный чекер по JSON-списку).
-- **Email:** Holehe (регистрации), Gravatar (профиль и привязанные аккаунты), GHunt (Google, нужны cookies), **XposedOrNot** и **Hudson Rock** (бесплатно, без ключей).
+- **Email:** Holehe (регистрации), Gravatar (профиль и привязанные аккаунты), **Microsoft GetCredentialType** (существование аккаунта), **PGP keyserver** (подтверждённый email), **Disify** (формат/disposable/MX), GHunt (Google, нужны cookies), **XposedOrNot** и **Hudson Rock** (утечки, без ключей).
 - **Phone:** локальный парсер + PhoneInfoga (если установлен).
 - **Real name:** GitHub Users API (бесплатный поиск по `fullname`).
 - **Верифицированные обогатители:** GitHub API, GitLab API, Keybase proofs (даёт подтверждённые twitter/github/reddit/hackernews и др.), Gravatar.
 - Holehe больше не считается «аккаунтом»: факты регистрации выносятся в отдельную таблицу `EMAIL REGISTRATIONS`, чтобы не засорять граф.
-- Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники, считает `score` и `verified`. По умолчанию показываются verified / multi-source / score ≥ 70; остальное — через `Filters → show unverified`.
+- URL-фильтрация отсекает search-страницы, корневые URL, сторонние трекеры и ссылки без handle; платформы канонизируются (`Chess`/`Chess.com` → `chess.com`).
+- HTTP-верификация: 404/410 отбрасываются, 2xx с handle в теле помечаются `verified`, 403/429/timeout остаются без ложного подтверждения.
+- **Maigret по умолчанию работает без лимита сайтов**; `MAIGRET_MAX_SITES=0` (или пусто) = весь список, число — ограничение для быстрого режима.
+- Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники, считает `score` и `verified`. По умолчанию показываются только verified / multi-source аккаунты; одиночные эвристические совпадения — через `show low-confidence / unverified`.
 
 Демо без внешних инструментов:
 ```bash
 PEOPLE_FIXTURE=1 docker compose up -d --build backend
 # в UI введите: test
 ```
-Переменные: `SHERLOCK_BIN`, `MAIGRET_BIN`, `MAIGRET_MAX_SITES`, `BLACKBIRD_BIN`, `BLACKBIRD_DIR`, `HOLEHE_BIN`, `GHUNT_BIN`, `PHONEINFOGA_BIN`, `WMN_MAX_SITES`, `EMAILREP_API_KEY`, `GITHUB_TOKEN`.
+Переменные: `SHERLOCK_BIN`, `MAIGRET_BIN`, `MAIGRET_MAX_SITES`, `BLACKBIRD_BIN`, `BLACKBIRD_DIR`, `HOLEHE_BIN`, `GHUNT_BIN`, `PHONEINFOGA_BIN`, `WMN_MAX_SITES`, `GITHUB_TOKEN`.
 
 Семантическое совпадение: при вводе ссылки на профиль берутся имя/bio/avatar/ссылки источника, затем кандидаты проверяются по этим признакам (`match_score`, `match_reason`), а не только по совпадению handle. По умолчанию для profile URL показываются только совпадения ≥50; остальное — через `show unverified`.
 
@@ -169,6 +175,57 @@ docker compose -f docker-compose.yml -f docker-compose.lite.yml up -d --build ba
 ```
 
 Файл `docker-compose.osint.yml` оставлен для совместимости и указывает на тот же `Dockerfile.osint`.
+
+Чтобы добавить ProjectDiscovery CLI (subfinder/httpx/naabu/tlsx/katana) в образ:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.pdtools.yml up -d --build backend
+```
+
+Без этих бинарей сканер работает, просто пропускает активные PD-проверки.
+
+## Tests и CI/CD
+
+Структура тестов:
+
+```
+server/tests/              # Go: external tests (people/scanner)
+server/people/*_test.go    # Go: internal unit tests (unexported-функции)
+server/scanner/*_test.go   # Go: internal unit tests (парсеры источников)
+tests/frontend/unit/       # Node test runner (чистые JS-функции)
+tests/frontend/e2e/        # Playwright (граф, фильтры, People-OSINT)
+```
+
+Запуск:
+```bash
+cd server && go test ./... -count=1
+cd client && npm run lint && npm run test:unit && npm run build
+npm ci && npm run test:e2e        # из корня, Playwright
+```
+
+GitLab CI (`.gitlab-ci.yml`) выполняет:
+- `test:backend` — gofmt, vet, тесты + coverage;
+- `test:frontend-unit` — eslint, unit-тесты, production build;
+- `test:e2e` — Playwright в официальном образе;
+- `package:*` — сборка и пуш Docker-образов в GitLab Registry (main/tags);
+- `package:backend-osint` — полный OSINT-образ, manual;
+- `deploy:production` — manual, SSH-деплой.
+
+Для деплоя задайте CI/CD variables: `SSH_PRIVATE_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`.
+
+### GitLab Runner
+
+Если у проекта нет активного runner, он поднимается локально в Docker:
+
+1. GitLab → проект `stare` → **Settings → CI/CD → Runners → New project runner**.
+2. Скопируйте токен `glrt-...`.
+3. Запустите:
+   ```bash
+   RUNNER_TOKEN="glrt-..." ./scripts/register-gitlab-runner.sh
+   ```
+4. Проверьте: https://vcs.uni-dubna.ru/DAAG.24/stare/-/settings/ci_cd
+
+Runner использует Docker executor, `privileged=true` (нужно для docker-in-docker в package jobs), `run_untagged=true`, теги `docker,stare`. Конфиг хранится в `secrets/gitlab-runner/config.toml` (gitignored).
 
 ## 📁 Структура проекта
 

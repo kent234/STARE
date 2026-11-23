@@ -1,6 +1,6 @@
 //go:build !nuclei
 
-package scanner
+package tests
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"stare/server/scanner"
 )
 
 func TestRunNucleiExec(t *testing.T) {
@@ -24,7 +26,7 @@ func TestRunNucleiExec(t *testing.T) {
 	t.Setenv("NUCLEI_BINARY", bin)
 	t.Setenv("NUCLEI_SEVERITY", "critical,high")
 
-	findings, err := RunNuclei(context.Background(), "example.com")
+	findings, err := scanner.RunNuclei(context.Background(), "example.com")
 	if err != nil {
 		t.Fatalf("RunNuclei: %v", err)
 	}
@@ -40,7 +42,7 @@ func TestRunNucleiExec(t *testing.T) {
 func TestRunNucleiMissingBinary(t *testing.T) {
 	t.Setenv("NUCLEI_BINARY", filepath.Join(t.TempDir(), "nuclei-does-not-exist"))
 
-	findings, err := RunNuclei(context.Background(), "example.com")
+	findings, err := scanner.RunNuclei(context.Background(), "example.com")
 	if err != nil {
 		t.Fatalf("missing binary should not fail scan: %v", err)
 	}

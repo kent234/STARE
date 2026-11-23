@@ -2,7 +2,7 @@
 FROM golang:1.27.3-alpine AS builder
 
 WORKDIR /app
-ENV GOPROXY=https://goproxy.ru,direct
+ENV GOPROXY=https://proxy.golang.org,https://goproxy.ru,direct
 ENV GOSUMDB=off
 # Копируем только файлы зависимостей для кэширования
 COPY go.mod go.sum ./

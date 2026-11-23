@@ -15,10 +15,12 @@ import (
 
 // NucleiFinding — результат проверки Nuclei.
 type NucleiFinding struct {
-	TemplateID string `json:"template_id"`
-	Name       string `json:"name"`
-	Severity   string `json:"severity"`
-	MatchedAt  string `json:"matched_at"`
+	TemplateID string  `json:"template_id"`
+	Name       string  `json:"name"`
+	Severity   string  `json:"severity"`
+	MatchedAt  string  `json:"matched_at"`
+	KEV        bool    `json:"kev,omitempty"`
+	EPSS       float64 `json:"epss,omitempty"`
 }
 
 // RunNuclei запускает внешний бинарник nuclei (JSONL) и маппит его вывод.

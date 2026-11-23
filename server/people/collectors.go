@@ -143,10 +143,10 @@ func runMaigretJSON(ctx context.Context, bin, target string) []scanner.Observati
 
 	maxSites := os.Getenv("MAIGRET_MAX_SITES")
 	if maxSites == "" {
-		maxSites = "1000"
+		// По умолчанию без ограничения: Maigret проверяет весь свой список сайтов.
+		maxSites = "0"
 	}
-	cmd := exec.CommandContext(ctx, bin, target, "--no-color", "--timeout", "10",
-		"--json", "simple", "--top-sites", maxSites)
+	cmd := exec.CommandContext(ctx, bin, maigretArgs(target, maxSites)...)
 	cmd.Dir = dir
 	_, _ = cmd.CombinedOutput()
 
@@ -296,4 +296,13 @@ func onlyDigits(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// maigretArgs собирает аргументы CLI. "0" или пустое значение = без --top-sites.
+func maigretArgs(target, maxSites string) []string {
+	args := []string{target, "--no-color", "--timeout", "10", "--json", "simple"}
+	if maxSites != "" && maxSites != "0" {
+		args = append(args, "--top-sites", maxSites)
+	}
+	return args
 }

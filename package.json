@@ -1,0 +1,14 @@
+{
+  "name": "stare-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:graph": "playwright test tests/frontend/e2e/graph-ui.spec.js",
+    "test:people": "playwright test tests/frontend/e2e/people.spec.js",
+    "bench:graph": "BENCH_OUT=client/bench/optimized.json playwright test tests/frontend/e2e/graph.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0"
+  }
+}

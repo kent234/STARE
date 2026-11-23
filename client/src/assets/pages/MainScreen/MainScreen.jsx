@@ -2,18 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import GlassButton from '../../components/ui/GlassButton';
 import GraphVisualizer from '../../features/graph/GraphVisualizer';
 import DataTable from '../../features/graph/DataTable';
+import { detectPeopleKind } from '../../features/people/detect';
 import './MainScreen.css';
-
-function detectPeopleKind(value) {
-  const s = String(value || '').trim();
-  if (!s) return null;
-  if (s.includes('@') && !/\s/.test(s)) return 'email';
-  if (/^\+?[\d\s()-]{7,20}$/.test(s) && s.replace(/\D/g, '').length >= 7) return 'phone';
-  if (/^(https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}\/.+/i.test(s)) return 'profile_url';
-  if (/\s/.test(s)) return 'real_name';
-  if (!/[./:]/.test(s) && /^[a-zA-Z0-9_][a-zA-Z0-9_.-]{1,31}$/.test(s)) return 'username';
-  return null;
-}
 
 function MainScreen({ onBack, onLogout }) {
   const [target, setTarget] = useState('');
@@ -23,6 +13,9 @@ function MainScreen({ onBack, onLogout }) {
   const [history, setHistory] = useState([]);
   const [currentScanId, setCurrentScanId] = useState(null);
   const [viewMode, setViewMode] = useState('graph');
+  // ID сканов, выбранных чекбоксами для пакетного удаления.
+  const [selectedScans, setSelectedScans] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const logsEndRef = useRef(null);
 
   useEffect(() => {
@@ -37,7 +30,12 @@ function MainScreen({ onBack, onLogout }) {
         const res = await fetch('http://localhost:8080/api/scans');
         if (!res.ok) throw new Error('Backend offline');
         const data = await res.json();
-        if (isMounted) setHistory(data || []);
+        if (isMounted) {
+          const scans = data || [];
+          setHistory(scans);
+          // Убираем из выбора ID, которых больше нет в истории.
+          setSelectedScans(prev => prev.filter(id => scans.some(scan => scan.id === id)));
+        }
       } catch (err) { console.log("History loading error:", err.message); }
     };
     fetchHistory();
@@ -68,6 +66,7 @@ function MainScreen({ onBack, onLogout }) {
       });
       if (!res.ok) throw new Error('Delete failed');
       setHistory(prev => prev.filter(item => item.id !== id));
+      setSelectedScans(prev => prev.filter(selectedId => selectedId !== id));
       if (currentScanId === id) {
         setScanData(null);
         setCurrentScanId(null);
@@ -76,6 +75,72 @@ function MainScreen({ onBack, onLogout }) {
     } catch (err) {
       setLogs(prev => [...prev, `[ERROR] ${err.message}`]);
     }
+  };
+
+  const toggleScanSelection = (id, event) => {
+    event.stopPropagation();
+    setSelectedScans(prev => (
+      prev.includes(id) ? prev.filter(selectedId => selectedId !== id) : [...prev, id]
+    ));
+  };
+
+  const allSelected = history.length > 0 && selectedScans.length === history.length;
+
+  const toggleSelectAll = () => {
+    setSelectedScans(allSelected ? [] : history.map(scan => scan.id));
+  };
+
+  // Единая точка пакетного удаления: { ids: [...] } или { all: true }.
+  const deleteScanBatch = async (payload, confirmText) => {
+    if (!window.confirm(confirmText)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch('http://localhost:8080/api/scans/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Bulk delete failed');
+      const result = await res.json();
+      const removed = payload.all
+        ? history
+        : history.filter(scan => payload.ids.includes(scan.id));
+
+      if (payload.all) {
+        setHistory([]);
+        setSelectedScans([]);
+        setScanData(null);
+        setCurrentScanId(null);
+      } else {
+        setHistory(prev => prev.filter(scan => !payload.ids.includes(scan.id)));
+        setSelectedScans(prev => prev.filter(id => !payload.ids.includes(id)));
+        if (currentScanId && payload.ids.includes(currentScanId)) {
+          setScanData(null);
+          setCurrentScanId(null);
+        }
+      }
+      setLogs(prev => [...prev, `[DB] Deleted ${result.deleted ?? removed.length} saved graph(s)`]);
+    } catch (err) {
+      setLogs(prev => [...prev, `[ERROR] ${err.message}`]);
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const deleteSelectedScans = () => {
+    if (selectedScans.length === 0) return;
+    deleteScanBatch(
+      { ids: selectedScans },
+      `Delete ${selectedScans.length} selected saved graph(s) permanently?`
+    );
+  };
+
+  const deleteAllScans = () => {
+    if (history.length === 0) return;
+    deleteScanBatch(
+      { all: true },
+      `Delete ALL ${history.length} saved graph(s) permanently? This cannot be undone.`
+    );
   };
 
   const handleScan = async () => {
@@ -137,26 +202,74 @@ function MainScreen({ onBack, onLogout }) {
 
       <main className="workspace">
         <section className="history-panel">
-          <div className="panel-header">[ SAVED.GRAPHS ]</div>
+          <div className="panel-header history-header">
+            <span>[ SAVED.GRAPHS ]</span>
+            <div className="history-actions">
+              {selectedScans.length > 0 && (
+                <button
+                  className="history-action"
+                  title="Delete selected saved graphs"
+                  onClick={deleteSelectedScans}
+                  disabled={bulkDeleting}
+                >
+                  DEL {selectedScans.length}
+                </button>
+              )}
+              {history.length > 0 && (
+                <button
+                  className="history-action"
+                  title="Delete all saved graphs"
+                  onClick={deleteAllScans}
+                  disabled={bulkDeleting}
+                >
+                  DEL.ALL
+                </button>
+              )}
+            </div>
+          </div>
           <div className="history-list">
             {history.length === 0 ? (
               <div style={{ color: '#555', fontSize: '12px', textAlign: 'center', marginTop: '10px' }}>No history yet</div>
             ) : (
-              history.map(scan => (
-                <div key={scan.id} className="history-item" onClick={() => loadHistoricalScan(scan.id)}>
-                  <div className="history-info">
-                    <div className="history-target">{scan.target}</div>
-                    <div className="history-date">{new Date(scan.created_at).toLocaleTimeString()}</div>
-                  </div>
-                  <button
-                    className="history-delete"
-                    title="Delete saved graph"
-                    onClick={(e) => deleteHistoricalScan(scan.id, e)}
+              <>
+                <label className="history-select-all">
+                  <input
+                    type="checkbox"
+                    className="history-check"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                  />
+                  <span>{allSelected ? 'clear selection' : `select all (${history.length})`}</span>
+                </label>
+                {history.map(scan => (
+                  <div
+                    key={scan.id}
+                    className={`history-item${selectedScans.includes(scan.id) ? ' selected' : ''}`}
+                    onClick={() => loadHistoricalScan(scan.id)}
                   >
-                    [ x ]
-                  </button>
-                </div>
-              ))
+                    <input
+                      type="checkbox"
+                      className="history-check"
+                      title="Select for bulk delete"
+                      aria-label={`Select ${scan.target}`}
+                      checked={selectedScans.includes(scan.id)}
+                      onChange={(e) => toggleScanSelection(scan.id, e)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="history-info">
+                      <div className="history-target">{scan.target}</div>
+                      <div className="history-date">{new Date(scan.created_at).toLocaleTimeString()}</div>
+                    </div>
+                    <button
+                      className="history-delete"
+                      title="Delete saved graph"
+                      onClick={(e) => deleteHistoricalScan(scan.id, e)}
+                    >
+                      [ x ]
+                    </button>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </section>
