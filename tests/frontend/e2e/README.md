@@ -27,3 +27,9 @@
 | `profile URL enriches account with public metadata` | Ввести `https://vk.com/test` (API замокан) | Есть Account-узел, label содержит имя, панель показывает `Test Profile` и bio |
 | `username investigation renders accounts and details` | Ввести `test` (API замокан, 3 аккаунта) | ≥3 Account-узлов, клик показывает `account/source/confidence` |
 | `email MVP shows Microsoft account and email intelligence` | Ввести `test@example.com` (API замокан: Microsoft + Disify + Holehe) | Account `microsoft`, секция `EMAIL INTELLIGENCE` с MX, регистрация `office365.com` |
+
+## `history.spec.js`
+
+| Тест | Сценарий | Ожидаемый результат |
+|---|---|---|
+| `bulk delete and delete-all saved graphs` | Открыть `[ SAVED.GRAPHS ]` (API замокан, 3 скана), выбрать 2 чекбоксами, затем `DEL.ALL` | `POST /api/scans/delete` получает `{ids:[...]}` и `{all:true}`, история очищается |

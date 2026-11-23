@@ -115,7 +115,61 @@
 
 /* ЛЕВАЯ ПАНЕЛЬ (История) */
 .history-panel {
-  flex: 0 0 220px; /* Фиксированная ширина 220px */
+  flex: 0 0 250px; /* Чуть шире: чекбоксы + кнопки пакетного удаления */
+}
+
+/* Заголовок с кнопками bulk-delete */
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.history-action {
+  background: transparent;
+  border: 1px solid #442222;
+  color: #ff003c;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  padding: 2px 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.history-action:hover:not(:disabled) {
+  border-color: #ff003c;
+  background: #2a0008;
+  text-shadow: 0 0 5px rgba(255, 0, 60, 0.6);
+}
+.history-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Чекбоксы выбора сканов */
+.history-select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 10px;
+  padding: 0 2px 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.history-select-all:hover { color: #aaa; }
+
+.history-check {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: #ff003c;
+  cursor: pointer;
 }
 
 .history-list {
@@ -141,6 +195,10 @@
 .history-item:hover {
   border-color: #fff;
   background: #1a1a1a;
+}
+.history-item.selected {
+  border-color: #ff003c;
+  background: #1a0005;
 }
 .history-info {
   min-width: 0;
