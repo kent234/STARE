@@ -40,6 +40,8 @@ type Account struct {
 	MultiSource bool                   `json:"multi_source"`
 	Verified    bool                   `json:"verified"`
 	URLValid    bool                   `json:"url_valid"`
+	HTTPChecked bool                   `json:"http_checked,omitempty"`
+	HTTPStatus  int                    `json:"http_status,omitempty"`
 	Score       int                    `json:"score"`
 	MatchScore  int                    `json:"match_score,omitempty"`
 	MatchReason string                 `json:"match_reason,omitempty"`
@@ -197,7 +199,7 @@ func Run(ctx context.Context, target string) Result {
 		wg.Add(1)
 		go func(collector Collector, cTarget string) {
 			defer wg.Done()
-			cctx, cancel := context.WithTimeout(ctx, 600*time.Second)
+			cctx, cancel := context.WithTimeout(ctx, 900*time.Second)
 			obs, err := collector.Collect(cctx, cTarget)
 			cancel()
 			mu.Lock()
@@ -213,6 +215,7 @@ func Run(ctx context.Context, target string) Result {
 
 	res.Observations = observations
 	res.Accounts, res.Breaches, res.Phone, res.Registrations = Normalize(observations)
+	res.Accounts = VerifyAccountURLs(ctx, res.Accounts)
 	if kind == KindProfileURL {
 		res.Accounts = ApplyProfileMatch(ctx, target, res.Accounts)
 	}

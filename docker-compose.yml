@@ -44,7 +44,7 @@ services:
       - NUCLEI_TIMEOUT=${NUCLEI_TIMEOUT:-}
       - SHERLOCK_BIN=${SHERLOCK_BIN:-/usr/local/bin/sherlock}
       - MAIGRET_BIN=${MAIGRET_BIN:-/usr/local/bin/maigret}
-      - MAIGRET_MAX_SITES=${MAIGRET_MAX_SITES:-1000}
+      - MAIGRET_MAX_SITES=${MAIGRET_MAX_SITES:-0}
       - BLACKBIRD_BIN=${BLACKBIRD_BIN:-/usr/local/bin/blackbird}
       - BLACKBIRD_DIR=${BLACKBIRD_DIR:-/opt/blackbird}
       - HOLEHE_BIN=${HOLEHE_BIN:-/usr/local/bin/holehe}

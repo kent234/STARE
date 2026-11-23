@@ -147,6 +147,9 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 - **Real name:** GitHub Users API (бесплатный поиск по `fullname`).
 - **Верифицированные обогатители:** GitHub API, GitLab API, Keybase proofs (даёт подтверждённые twitter/github/reddit/hackernews и др.), Gravatar.
 - Holehe больше не считается «аккаунтом»: факты регистрации выносятся в отдельную таблицу `EMAIL REGISTRATIONS`, чтобы не засорять граф.
+- URL-фильтрация отсекает search-страницы, корневые URL, сторонние трекеры и ссылки без handle; платформы канонизируются (`Chess`/`Chess.com` → `chess.com`).
+- HTTP-верификация: 404/410 отбрасываются, 2xx с handle в теле помечаются `verified`, 403/429/timeout остаются без ложного подтверждения.
+- **Maigret по умолчанию работает без лимита сайтов**; `MAIGRET_MAX_SITES=0` (или пусто) = весь список, число — ограничение для быстрого режима.
 - Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники, считает `score` и `verified`. По умолчанию показываются verified / multi-source / score ≥ 70; остальное — через `Filters → show unverified`.
 
 Демо без внешних инструментов:
