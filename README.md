@@ -142,7 +142,7 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 
 - **Ссылка на профиль:** извлекается платформа и handle, забираются OpenGraph/`<title>`/bio/avatar/внешние ссылки, затем handle проверяется по всем остальным платформам.
 - **Username:** Sherlock, Maigret, Blackbird (CLI), WhatsMyName (встроенный чекер по JSON-списку).
-- **Email:** Holehe (регистрации), Gravatar (профиль и привязанные аккаунты), GHunt (Google, нужны cookies), **XposedOrNot** и **Hudson Rock** (бесплатно, без ключей).
+- **Email:** Holehe (регистрации), Gravatar (профиль и привязанные аккаунты), **Microsoft GetCredentialType** (существование аккаунта), **PGP keyserver** (подтверждённый email), **Disify** (формат/disposable/MX), GHunt (Google, нужны cookies), **XposedOrNot** и **Hudson Rock** (утечки, без ключей).
 - **Phone:** локальный парсер + PhoneInfoga (если установлен).
 - **Real name:** GitHub Users API (бесплатный поиск по `fullname`).
 - **Верифицированные обогатители:** GitHub API, GitLab API, Keybase proofs (даёт подтверждённые twitter/github/reddit/hackernews и др.), Gravatar.
@@ -157,7 +157,7 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 PEOPLE_FIXTURE=1 docker compose up -d --build backend
 # в UI введите: test
 ```
-Переменные: `SHERLOCK_BIN`, `MAIGRET_BIN`, `MAIGRET_MAX_SITES`, `BLACKBIRD_BIN`, `BLACKBIRD_DIR`, `HOLEHE_BIN`, `GHUNT_BIN`, `PHONEINFOGA_BIN`, `WMN_MAX_SITES`, `EMAILREP_API_KEY`, `GITHUB_TOKEN`.
+Переменные: `SHERLOCK_BIN`, `MAIGRET_BIN`, `MAIGRET_MAX_SITES`, `BLACKBIRD_BIN`, `BLACKBIRD_DIR`, `HOLEHE_BIN`, `GHUNT_BIN`, `PHONEINFOGA_BIN`, `WMN_MAX_SITES`, `GITHUB_TOKEN`.
 
 Семантическое совпадение: при вводе ссылки на профиль берутся имя/bio/avatar/ссылки источника, затем кандидаты проверяются по этим признакам (`match_score`, `match_reason`), а не только по совпадению handle. По умолчанию для profile URL показываются только совпадения ≥50; остальное — через `show unverified`.
 

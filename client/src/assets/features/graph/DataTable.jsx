@@ -26,6 +26,26 @@ function PeopleTable({ data }) {
         </div>
       )}
 
+      {data.email && (
+        <div className="table-section">
+          <h3 className="table-title">EMAIL INTELLIGENCE <span>{data.email.email}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>DOMAIN</th><th>FORMAT</th><th>DNS</th><th>DISPOSABLE</th><th>ROLE</th><th>FREE</th><th>MX</th></tr></thead>
+            <tbody>
+              <tr className="data-row">
+                <td>{data.email.domain || '-'}</td>
+                <td className={data.email.format ? 'safe-status' : 'risky-status'}>{data.email.format ? 'VALID' : 'INVALID'}</td>
+                <td>{String(!!data.email.dns)}</td>
+                <td className={data.email.disposable ? 'risky-status' : 'safe-status'}>{String(!!data.email.disposable)}</td>
+                <td>{String(!!data.email.role)}</td>
+                <td>{String(!!data.email.free)}</td>
+                <td className="obs-summary">{(data.email.mx || []).join(', ') || '-'}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="table-section">
         <h3 className="table-title">
           PEOPLE-OSINT <span>{data.input_type}: {data.target}</span>

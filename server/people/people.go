@@ -94,6 +94,7 @@ type Result struct {
 	Actor         *Actor                `json:"actor,omitempty"`
 	Breaches      []Breach              `json:"breaches,omitempty"`
 	Phone         *PhoneInfo            `json:"phone,omitempty"`
+	Email         *EmailIntel           `json:"email,omitempty"`
 	Errors        []string              `json:"errors,omitempty"`
 }
 
@@ -111,7 +112,9 @@ var collectors = []Collector{
 	&WhatsMyNameCollector{},
 	&HoleheCollector{},
 	&GravatarCollector{},
-	&EmailRepCollector{},
+	&MicrosoftCollector{},
+	&PGPCollector{},
+	&DisifyCollector{},
 	&XposedOrNotCollector{},
 	&HudsonRockCollector{},
 	&GHuntCollector{},
@@ -214,6 +217,7 @@ func Run(ctx context.Context, target string) Result {
 	wg.Wait()
 
 	res.Observations = observations
+	res.Email = ExtractEmailIntel(observations)
 	res.Accounts, res.Breaches, res.Phone, res.Registrations = Normalize(observations)
 	res.Accounts = VerifyAccountURLs(ctx, res.Accounts)
 	if kind == KindProfileURL {
@@ -231,7 +235,7 @@ func collectorApplies(name string, kind Kind) bool {
 		return kind == KindUsername || kind == KindProfileURL || kind == KindEmail
 	case "profile":
 		return kind == KindProfileURL
-	case "holehe", "xposedornot", "hudsonrock", "ghunt", "gravatar", "emailrep":
+	case "holehe", "xposedornot", "hudsonrock", "ghunt", "gravatar", "microsoft", "pgp", "disify":
 		return kind == KindEmail
 	case "phone", "phoneinfoga":
 		return kind == KindPhone
@@ -324,12 +328,16 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		link := str(payload["url"])
 		// Отсекаем search-URL, корневые страницы, сторонние трекеры и ссылки
 		// без самого handle — это основной источник «мусорных» совпадений.
-		if !isValidProfileURL(platform, handle, link) {
+		provider := kind == "provider"
+		if !provider && !isValidProfileURL(platform, handle, link) {
 			continue
 		}
 		platform = canonicalPlatformForURL(link, platform)
-		verified := boolVal(payload["verified"])
+		verified := boolVal(payload["verified"]) || provider
 		score := accountScore(obs.Confidence, verified, link, handle, obs.Source)
+		if provider {
+			score = 95
+		}
 
 		key := platform + "|" + strings.ToLower(handle)
 		acc, ok := byKey[key]
