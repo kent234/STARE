@@ -273,6 +273,93 @@ function DataTable({ data }) {
         </table>
       </div>
 
+      {(data.http || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">HTTP PROBES <span>{data.http.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>URL</th><th>STATUS</th><th>TITLE</th><th>SERVER</th><th>TECH</th><th>TLS</th></tr></thead>
+            <tbody>
+              {data.http.map((probe, i) => (
+                <tr key={`${probe.url}-${i}`} className="data-row">
+                  <td className="clickable-cell">{probe.url || probe.input}</td>
+                  <td>{probe.status_code || '-'}</td>
+                  <td>{probe.title || '-'}</td>
+                  <td>{probe.webserver || probe.cdn || '-'}</td>
+                  <td className="obs-summary">{(probe.technologies || []).slice(0, 6).join(', ') || '-'}</td>
+                  <td className="obs-summary">{probe.tls ? `${probe.tls.issuer_cn || 'cert'} · ${probe.tls.not_after || ''}` : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(data.tls || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">TLS CERTIFICATES <span>{data.tls.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>HOST</th><th>CN</th><th>ISSUER</th><th>SAN</th><th>NOT AFTER</th><th>STATUS</th></tr></thead>
+            <tbody>
+              {data.tls.map((cert, i) => (
+                <tr key={`${cert.host}-${i}`} className="data-row">
+                  <td>{cert.host || '-'}</td>
+                  <td>{cert.subject_cn || '-'}</td>
+                  <td>{cert.issuer_cn || '-'}</td>
+                  <td className="obs-summary">{(cert.san || []).slice(0, 8).join(', ') || '-'}</td>
+                  <td>{cert.not_after || '-'}</td>
+                  <td className={cert.expired ? 'risky-status' : 'safe-status'}>{cert.expired ? 'EXPIRED' : 'VALID'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(data.endpoints || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">ENDPOINTS (KATANA) <span>{data.endpoints.length}</span></h3>
+          <div className="obs-json">{data.endpoints.slice(0, 500).join('\n')}</div>
+        </div>
+      )}
+
+      {(data.cloud_buckets || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">CLOUD BUCKETS <span>{data.cloud_buckets.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>PROVIDER</th><th>NAME</th><th>STATUS</th><th>ACCESS</th><th>URL</th></tr></thead>
+            <tbody>
+              {data.cloud_buckets.map((bucket, i) => (
+                <tr key={`${bucket.provider}-${bucket.name}-${i}`} className="data-row">
+                  <td>{bucket.provider}</td>
+                  <td>{bucket.name}</td>
+                  <td>{bucket.status}</td>
+                  <td className={bucket.public ? 'risky-status' : 'safe-status'}>{bucket.public ? 'PUBLIC' : 'PRIVATE'}</td>
+                  <td className="clickable-cell">{bucket.url}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(data.threat_hits || []).length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">THREAT FEED HITS <span>{data.threat_hits.length}</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>SOURCE</th><th>INDICATOR</th><th>DETAIL</th></tr></thead>
+            <tbody>
+              {data.threat_hits.map((hit, i) => (
+                <tr key={`${hit.source}-${hit.indicator}-${i}`} className="data-row">
+                  <td className="obs-source">{hit.source}</td>
+                  <td>{hit.indicator}</td>
+                  <td className="obs-summary">{hit.detail || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="table-section">
         <h3 className="table-title">
           THREAT INTELLIGENCE <span>{obsRows.length} observations</span>

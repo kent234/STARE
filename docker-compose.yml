@@ -52,6 +52,11 @@ services:
       - PHONEINFOGA_BIN=${PHONEINFOGA_BIN:-/usr/local/bin/phoneinfoga}
       - EMAILREP_API_KEY=${EMAILREP_API_KEY:-}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - SUBFINDER_BIN=${SUBFINDER_BIN:-}
+      - HTTPX_BIN=${HTTPX_BIN:-}
+      - NAABU_BIN=${NAABU_BIN:-}
+      - TLSX_BIN=${TLSX_BIN:-}
+      - KATANA_BIN=${KATANA_BIN:-}
       - WMN_URL=${WMN_URL:-}
       - WMN_MAX_SITES=${WMN_MAX_SITES:-200}
       - PEOPLE_FIXTURE=${PEOPLE_FIXTURE:-}
