@@ -57,8 +57,12 @@ server/
    probe and TLS certs into one record.
 8. **Nuclei** (parallel, optional) + CISA KEV/EPSS enrichment.
 
-All parallel slices are sorted before output: subdomains, sources, IPs,
-observations, HTTP/TLS, vulnerabilities, buckets and errors.
+Subdomains are normalized/validated (`normalizeSubdomain`), endpoints are
+filtered to in-scope HTTP(S) URLs (`filterEndpoints`), and `CheckEmailDNS`
+queries SPF/DMARC/CAA/DNSSEC over DoH. `artifacts` falls back from HTTPS to
+HTTP and parses `Disallow`/`Allow`/`Sitemap`. All parallel slices are sorted
+before output: subdomains, sources, IPs, observations, HTTP/TLS,
+vulnerabilities, buckets and errors.
 
 `RunFullScan` returns `scan_id`, `schema_version` and `scan_meta`:
 `tools` (`ran|missing|error|skipped`, duration, input/items, truncation) and

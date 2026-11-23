@@ -848,6 +848,10 @@ function GraphVisualizer({ data }) {
         info.ServerHeader = data.artifacts?.server_header || 'Unknown';
         info.FaviconMD5 = data.artifacts?.favicon_md5 || 'Unknown';
         if (data.artifacts?.robots_txt?.length > 0) info.RobotsTxt = data.artifacts.robots_txt;
+        if (data.artifacts?.allow?.length > 0) info.Allow = data.artifacts.allow;
+        if (data.artifacts?.sitemaps?.length > 0) info.Sitemaps = data.artifacts.sitemaps;
+        if (data.artifacts?.server_headers) info.ServerHeaders = data.artifacts.server_headers;
+        if (data.dns_checks) info.DNSChecks = data.dns_checks;
         info.Observations = observations.length;
         info.Vulnerabilities = vulnerabilities.length;
         info.ScanID = data.scan_id || 'n/a';

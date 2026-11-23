@@ -36,6 +36,25 @@
 | `TestActiveProbeTargets` | публичный/приватный/смешанный/нерезолвящийся поддомен | активные проверки только без приватных адресов |
 | `TestUniqueSortedIsSorted` / `TestSortHelpersDeterministic` | неотсортированные входы | стабильный порядок между прогонами |
 
+## `hosts_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestBuildHosts` | IP/ports/HTTP/TLS/wildcard | единая host-модель собирается без потерь |
+| `TestBestHTTPProbePrefersHTTPS200` | http 403 + https 200 | выбран https/200 |
+| `TestCertsForHostSAN` | сертификат с `*.example.com` | привязан к поддомену |
+| `TestTLSCandidateHosts` | 443 только у части хостов | tlsx получает только релевантные |
+| `TestGrabBannerPlain` / `TestIsTLSPort` | SSH-баннер, порты 443/8443 | первая строка без склейки, TLS-порты распознаны |
+
+## `hygiene_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestNormalizeSubdomain` | схема/порт/wildcard/`u003e`/чужой домен | валидные нормализуются, мусор отброшен |
+| `TestFilterEndpoints` | in-scope, static, `$%7B...%7D`, w3.org, дубли | остаются только рабочие API-URL |
+| `TestParseRobots` / `TestFetchArtifactsBase` | robots с Allow/Sitemap, favicon | поля и MD5 заполнены |
+| `TestCheckEmailDNS` | 2×SPF, DMARC p=none, CAA, DNSSEC off | PermError и issues корректны |
+
 ## `meta_test.go`
 
 | Тест | Сценарий | Ожидание |

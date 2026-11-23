@@ -105,7 +105,15 @@ export NUCLEI_TEMPLATES=~/nuclei-templates
 export NUCLEI_SEVERITY=critical,high
 export NUCLEI_TIMEOUT=5m
 ```
-Без бинарника скан работает, а раздел `VULNERABILITIES (NUCLEI)` в графе/таблице остаётся пустым, но в `scan_meta.tools.nuclei` будет `missing` — пустота больше не маскируется под «чисто». `scan_meta.coverage` показывает attempted/succeeded/failed/skipped по DNS, HTTP, портам, TLS и Nuclei; `scan_id`/`schema_version`/`duration_ms` делают прогон аудируемым. Docker-образ уже содержит `nuclei` v3.11.1 и официальные шаблоны (`/root/nuclei-templates`); переменные `NUCLEI_*` можно переопределить в `docker-compose.yml`/`.env`. Альтернатива — сборка с библиотекой: `go build -tags nuclei` (потребует вернуть зависимости Nuclei в `go.mod`).
+Без бинарника скан работает, а раздел `VULNERABILITIES (NUCLEI)` в графе/таблице остаётся пустым, но в `scan_meta.tools.nuclei` будет `missing` — пустота больше не маскируется под «чисто». `scan_meta.coverage` показывает attempted/succeeded/failed/skipped по DNS, HTTP, портам, TLS и Nuclei; `scan_id`/`schema_version`/`duration_ms` делают прогон аудируемым.
+
+### Гигиена данных
+
+- Поддомены нормализуются (lowercase, срез схемы/порта/`*.`/точки) и валидируются по label и суффиксу домена; мусор вида `u003ewww...` отбрасывается, число отброшенных — `subdomains_rejected`.
+- `endpoints[]` фильтруются по scope: только HTTP(S), без шаблонов `$%7B...%7D`, статики, `w3.org`/schema-URL; есть `endpoints_by_host` и лимит с флагом `truncated`.
+- `dns_checks`: SPF (несколько записей → PermError), DMARC (policy), CAA, DNSSEC через DoH (без ключей), с человекочитаемыми `issues`.
+- `artifacts`: fallback HTTPS→HTTP, разбор `Disallow`/`Allow`/`Sitemap`, `server_header` с реальных хостов (`server_headers` по хостам).
+- `hosts[]` объединяет IP, wildcard/private, порты, лучший HTTP-probe и TLS-сертификаты в одну запись. Docker-образ уже содержит `nuclei` v3.11.1 и официальные шаблоны (`/root/nuclei-templates`); переменные `NUCLEI_*` можно переопределить в `docker-compose.yml`/`.env`. Альтернатива — сборка с библиотекой: `go build -tags nuclei` (потребует вернуть зависимости Nuclei в `go.mod`).
 
 ---
 

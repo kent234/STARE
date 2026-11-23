@@ -505,9 +505,68 @@ function DataTable({ data }) {
         </div>
       )}
 
+      {data.dns_checks && (
+        <div className="table-section">
+          <h3 className="table-title">DNS / EMAIL SECURITY <span>{data.dns_checks.issues?.length || 0} issues</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>CHECK</th><th>STATUS</th><th>VALUE</th></tr></thead>
+            <tbody>
+              <tr className="data-row">
+                <td className="vuln-name">SPF</td>
+                <td className={data.dns_checks.spf_status === 'ok' ? 'safe-status' : 'risky-status'}>{data.dns_checks.spf_status || '-'}</td>
+                <td className="obs-summary">{(data.dns_checks.spf || []).join(' · ') || '-'}</td>
+              </tr>
+              <tr className="data-row">
+                <td className="vuln-name">DMARC</td>
+                <td className={data.dns_checks.dmarc_status === 'ok' ? 'safe-status' : 'risky-status'}>{data.dns_checks.dmarc_status || '-'}</td>
+                <td className="obs-summary">{data.dns_checks.dmarc || '-'}</td>
+              </tr>
+              <tr className="data-row">
+                <td className="vuln-name">DNSSEC</td>
+                <td className={data.dns_checks.dnssec ? 'safe-status' : 'risky-status'}>{data.dns_checks.dnssec ? 'enabled' : 'disabled'}</td>
+                <td className="obs-summary">-</td>
+              </tr>
+              <tr className="data-row">
+                <td className="vuln-name">CAA</td>
+                <td className={data.dns_checks.caa?.length ? 'safe-status' : 'risky-status'}>{data.dns_checks.caa?.length ? 'present' : 'missing'}</td>
+                <td className="obs-summary">{(data.dns_checks.caa || []).join(' · ') || '-'}</td>
+              </tr>
+            </tbody>
+          </table>
+          {(data.dns_checks.issues || []).length > 0 && (
+            <div className="obs-json" style={{ marginTop: '8px' }}>
+              {data.dns_checks.issues.map(issue => `! ${issue}`).join('\n')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {data.artifacts && (
+        <div className="table-section">
+          <h3 className="table-title">ARTIFACTS</h3>
+          <table className="terminal-table">
+            <tbody>
+              <tr><td className="vuln-name">SERVER</td><td className="obs-summary">{data.artifacts.server_header || '-'}</td></tr>
+              <tr><td className="vuln-name">ROBOTS</td><td className="obs-summary">{(data.artifacts.robots_txt || []).join(' · ') || '-'}</td></tr>
+              <tr><td className="vuln-name">ALLOW</td><td className="obs-summary">{(data.artifacts.allow || []).join(' · ') || '-'}</td></tr>
+              <tr><td className="vuln-name">SITEMAPS</td><td className="obs-summary">{(data.artifacts.sitemaps || []).join(' · ') || '-'}</td></tr>
+              <tr><td className="vuln-name">FAVICON MD5</td><td className="obs-summary">{data.artifacts.favicon_md5 || '-'}</td></tr>
+              {Object.entries(data.artifacts.server_headers || {}).map(([host, server]) => (
+                <tr key={host}><td className="vuln-name">{host}</td><td className="obs-summary">{server}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {(data.endpoints || []).length > 0 && (
         <div className="table-section">
           <h3 className="table-title">ENDPOINTS (KATANA) <span>{data.endpoints.length}</span></h3>
+          {Object.entries(data.endpoints_by_host || {}).length > 0 && (
+            <div className="obs-summary" style={{ marginBottom: '8px' }}>
+              hosts: {Object.entries(data.endpoints_by_host || {}).map(([host, list]) => `${host} (${list.length})`).join(' · ')}
+            </div>
+          )}
           <div className="obs-json">{data.endpoints.slice(0, 500).join('\n')}</div>
         </div>
       )}

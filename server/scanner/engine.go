@@ -20,6 +20,7 @@ type ScanResult struct {
 	Meta                ScanMeta            `json:"scan_meta"`
 	Target              string              `json:"target"`
 	Subdomains          []string            `json:"subdomains"`
+	SubdomainsRejected  int                 `json:"subdomains_rejected,omitempty"`
 	SubdomainSources    map[string][]string `json:"subdomain_sources,omitempty"`
 	SubdomainConfidence map[string]string   `json:"subdomain_confidence,omitempty"`
 	SubdomainIPs        map[string][]string `json:"subdomain_ips"`
@@ -37,6 +38,8 @@ type ScanResult struct {
 	TLS                 []TLSInfo           `json:"tls,omitempty"`
 	Hosts               []HostInfo          `json:"hosts,omitempty"`
 	Endpoints           []string            `json:"endpoints,omitempty"`
+	EndpointsByHost     map[string][]string `json:"endpoints_by_host,omitempty"`
+	DNSChecks           DNSChecks           `json:"dns_checks"`
 	CloudBuckets        []CloudBucket       `json:"cloud_buckets,omitempty"`
 	ThreatHits          []ThreatHit         `json:"threat_hits,omitempty"`
 	WildcardDNS         bool                `json:"wildcard_dns,omitempty"`
@@ -94,8 +97,12 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 	addSubdomains := func(source string, subs []string) {
 		mu.Lock()
 		defer mu.Unlock()
-		for _, sub := range subs {
-			if sub == "" {
+		for _, raw := range subs {
+			sub, ok := normalizeSubdomain(raw, target)
+			if !ok {
+				// Считаем отброшенные имена: это объясняет разницу между
+				// «источник вернул 319» и «реально проверено 200».
+				result.SubdomainsRejected++
 				continue
 			}
 			result.Subdomains = append(result.Subdomains, sub)
@@ -224,11 +231,24 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		}()
 	}
 
-	// 2. DNS, WHOIS и Технологии
-	wg.Add(3)
+	// 2. DNS, WHOIS, DNS-гигиена и Технологии
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		result.DNS = dns.ResolveExtended(ctx, target)
+	}()
+	go func() {
+		defer wg.Done()
+		if net.ParseIP(target) != nil {
+			return
+		}
+		checks, err := CheckEmailDNS(ctx, target)
+		mu.Lock()
+		defer mu.Unlock()
+		result.DNSChecks = checks
+		if err != nil {
+			result.Errors = append(result.Errors, "dns-checks: "+err.Error())
+		}
 	}()
 	go func() {
 		defer wg.Done()
@@ -426,7 +446,9 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		}
 
 		started := time.Now()
-		endpoints, err := RunKatana(ctx, "https://"+target)
+		rawEndpoints, err := RunKatana(ctx, "https://"+target)
+		endpoints := filterEndpoints(rawEndpoints, target)
+		dropped := len(rawEndpoints) - len(endpoints)
 		truncated := false
 		if len(endpoints) > katanaMaxEndpoints {
 			endpoints = endpoints[:katanaMaxEndpoints]
@@ -437,6 +459,7 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 			DurationMS: time.Since(started).Milliseconds(),
 			Input:      1,
 			Items:      len(endpoints),
+			Dropped:    dropped,
 			Truncated:  truncated,
 		}
 		if err != nil {
@@ -446,11 +469,15 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		mu.Lock()
 		defer mu.Unlock()
 		result.Meta.Tools["katana"] = status
+		rawCount := len(rawEndpoints)
+		cov := StageCoverage{Attempted: rawCount, Succeeded: len(endpoints), Failed: dropped}
+		result.Meta.Coverage["endpoints"] = cov
 		if err != nil {
 			result.Errors = append(result.Errors, "katana: "+err.Error())
 			return
 		}
 		result.Endpoints = endpoints
+		result.EndpointsByHost = groupEndpointsByHost(endpoints)
 	}()
 
 	wgActive.Add(1)
@@ -575,6 +602,28 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 		}
 		result.Meta.Tools["tlsx"] = status
 		result.Meta.Coverage["tls"] = cov
+	}
+
+	// Server-заголовки берём с реальных хостов, а не только с апекса.
+	if result.Artifacts.ServerHeaders == nil {
+		result.Artifacts.ServerHeaders = map[string]string{}
+	}
+	for _, probe := range result.HTTP {
+		host := probeHost(probe.Input)
+		if host == "" {
+			host = probeHost(probe.URL)
+		}
+		if host != "" && probe.Webserver != "" {
+			result.Artifacts.ServerHeaders[host] = probe.Webserver
+		}
+	}
+	if result.Artifacts.ServerHdr == "" {
+		for _, probe := range result.HTTP {
+			if probeHost(probe.Input) == target && probe.Webserver != "" {
+				result.Artifacts.ServerHdr = probe.Webserver
+				break
+			}
+		}
 	}
 
 	result.Hosts = buildHosts(target, apexIPs, result)

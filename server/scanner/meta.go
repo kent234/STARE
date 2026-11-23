@@ -27,6 +27,7 @@ type ToolStatus struct {
 	DurationMS int64  `json:"duration_ms,omitempty"`
 	Input      int    `json:"input,omitempty"`
 	Items      int    `json:"items,omitempty"`
+	Dropped    int    `json:"dropped,omitempty"`
 	Truncated  bool   `json:"truncated,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
