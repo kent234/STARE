@@ -37,6 +37,9 @@ func TestNormalizeDedupAndConfidence(t *testing.T) {
 		people.Observation("holehe", scanner.ConfidenceLow, map[string]any{
 			"platform": "twitter", "handle": "john", "url": "https://twitter.com/john",
 		}),
+		people.Observation("sherlock", scanner.ConfidenceMedium, map[string]any{
+			"platform": "twitter", "handle": "john", "url": "https://twitter.com/john",
+		}),
 	}
 
 	accounts, breaches, phone, _ := people.Normalize(obs)

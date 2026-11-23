@@ -661,7 +661,7 @@ function GraphVisualizer({ data }) {
           if (vis && d.type === 'account' && !allowUnverified) {
             const strong = data.input_type === 'profile_url'
               ? (d.matchScore || 0) >= 50
-              : (!!d.verified || (d.sources || []).length >= 2 || (d.score || 0) >= 70);
+              : (!!d.verified || (d.sources || []).length >= 2);
             if (!strong) vis = false;
           }
           node.style('display', vis ? 'element' : 'none');

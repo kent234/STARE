@@ -39,6 +39,7 @@ type Account struct {
 	Confidence  scanner.ConfidenceTier `json:"confidence_tier"`
 	MultiSource bool                   `json:"multi_source"`
 	Verified    bool                   `json:"verified"`
+	URLValid    bool                   `json:"url_valid"`
 	Score       int                    `json:"score"`
 	MatchScore  int                    `json:"match_score,omitempty"`
 	MatchReason string                 `json:"match_reason,omitempty"`
@@ -318,6 +319,12 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 			continue
 		}
 		link := str(payload["url"])
+		// Отсекаем search-URL, корневые страницы, сторонние трекеры и ссылки
+		// без самого handle — это основной источник «мусорных» совпадений.
+		if !isValidProfileURL(platform, handle, link) {
+			continue
+		}
+		platform = canonicalPlatformForURL(link, platform)
 		verified := boolVal(payload["verified"])
 		score := accountScore(obs.Confidence, verified, link, handle, obs.Source)
 
@@ -331,6 +338,7 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 				URL:        link,
 				Confidence: obs.Confidence,
 				Verified:   verified,
+				URLValid:   true,
 				Score:      score,
 			}
 			byKey[key] = acc
@@ -370,6 +378,13 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 	for _, acc := range byKey {
 		sort.Strings(acc.Sources)
 		acc.MultiSource = len(acc.Sources) > 1
+		if !acc.MultiSource && !acc.Verified {
+			// Одиночное эвристическое совпадение не должно выглядеть как факт.
+			acc.Score -= 15
+			if acc.Score < 0 {
+				acc.Score = 0
+			}
+		}
 		if acc.Verified && acc.Confidence == scanner.ConfidenceLow {
 			acc.Confidence = scanner.ConfidenceMedium
 		}
@@ -410,6 +425,7 @@ func canonicalPlatform(value string) string {
 		"githubgists":     "github",
 		"steamcommunity":  "steam",
 		"dockerhub":       "dockerhub",
+		"chess":           "chess.com",
 		"bluesky":         "bluesky",
 		"internetarchive": "archive.org",
 	}

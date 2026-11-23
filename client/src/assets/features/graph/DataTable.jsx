@@ -12,7 +12,7 @@ function PeopleTable({ data }) {
   const accounts = allAccounts.filter(acc => (
     showLow || (data.input_type === 'profile_url'
       ? (acc.match_score || 0) >= 50
-      : (acc.verified || (acc.sources || []).length >= 2 || (acc.score || 0) >= 70))
+      : (acc.verified || (acc.sources || []).length >= 2))
   ));
   const registrations = data.registrations || [];
   const hasAny = accounts.length || registrations.length || (data.breaches || []).length || data.phone;
