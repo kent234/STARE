@@ -206,8 +206,10 @@ func RunNaabu(ctx context.Context, ips []string, topPorts int) (map[string][]int
 
 // RunTLSX — сертификаты, SAN и срок действия для хоста.
 func RunTLSX(ctx context.Context, host string) ([]TLSInfo, error) {
+	// ВАЖНО: -san/-cn/-expired — взаимоисключающие probe-флаги tlsx.
+	// JSON-вывод по умолчанию уже содержит subject_cn, subject_an и not_after.
 	out, err := runPDTool(ctx, "TLSX_BIN", "tlsx", []string{
-		"-u", host, "-json", "-silent", "-no-color", "-san", "-cn", "-expired",
+		"-u", host, "-json", "-silent", "-no-color",
 	}, "", 90*time.Second)
 	if errors.Is(err, errToolNotInstalled) {
 		return nil, nil

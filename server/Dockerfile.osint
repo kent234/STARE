@@ -77,7 +77,8 @@ RUN case "${TARGETARCH:-$(uname -m)}" in \
  && unzip -q /tmp/nuclei.zip nuclei -d /usr/local/bin \
  && chmod +x /usr/local/bin/nuclei \
  && rm -f /tmp/nuclei.zip \
- && nuclei -update-templates
+ && nuclei -update-templates \
+ && test "$(find /root/nuclei-templates -name '*.yaml' | wc -l)" -gt 100
 
 # musl loader нужен для naabu, собранного в Alpine builder.
 RUN apt-get update && apt-get install -y --no-install-recommends musl \
