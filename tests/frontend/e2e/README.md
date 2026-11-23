@@ -26,3 +26,4 @@
 |---|---|---|
 | `profile URL enriches account with public metadata` | Ввести `https://vk.com/test` (API замокан) | Есть Account-узел, label содержит имя, панель показывает `Test Profile` и bio |
 | `username investigation renders accounts and details` | Ввести `test` (API замокан, 3 аккаунта) | ≥3 Account-узлов, клик показывает `account/source/confidence` |
+| `email MVP shows Microsoft account and email intelligence` | Ввести `test@example.com` (API замокан: Microsoft + Disify + Holehe) | Account `microsoft`, секция `EMAIL INTELLIGENCE` с MX, регистрация `office365.com` |

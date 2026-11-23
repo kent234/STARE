@@ -34,3 +34,12 @@
 | `TestParseJSONAccounts` | JSON-массив / `{results:[...]}` / мусор | 2/1/0 аккаунтов, source/confidence корректны |
 | `TestParseGHunt` | JSON GHunt с name/avatar | 1 verified google-аккаунт |
 | `TestWMNProfileExists` | httptest: e_string есть / нет | true только при совпадении e_string и отсутствии m_string |
+
+
+## `email_mvp_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestParseMicrosoftExists` | `IfExistsResult` 0/5/6/1, throttle, мусор | 0/5/6 → exists, 1 → нет, throttle/битый JSON → unknown |
+| `TestParseDisify` | JSON Disify с format/dns/mx | Поля и MX корректно извлечены |
+| `TestExtractEmailIntel` | Observation `kind=email_intel` | `EmailIntel` найден и заполнен |
