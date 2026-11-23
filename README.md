@@ -172,6 +172,14 @@ docker compose -f docker-compose.yml -f docker-compose.lite.yml up -d --build ba
 
 Файл `docker-compose.osint.yml` оставлен для совместимости и указывает на тот же `Dockerfile.osint`.
 
+Чтобы добавить ProjectDiscovery CLI (subfinder/httpx/naabu/tlsx/katana) в образ:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.pdtools.yml up -d --build backend
+```
+
+Без этих бинарей сканер работает, просто пропускает активные PD-проверки.
+
 ## Tests и CI/CD
 
 Структура тестов:

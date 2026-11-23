@@ -26,7 +26,7 @@ server/
     ports.go/dns.go   fallback scanners
   tests/              external Go tests (package tests)
   Dockerfile          lean runtime
-  Dockerfile.osint    full OSINT runtime (CLI tools, optional PD tools)
+  Dockerfile.osint    full OSINT runtime (CLI tools; PD tools via WITH_PD_TOOLS=1)
 ```
 
 ## Scan pipeline (`RunFullScan`)

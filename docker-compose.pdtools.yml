@@ -1,0 +1,9 @@
+# Override: собрать OSINT-образ с ProjectDiscovery CLI (subfinder/httpx/naabu/tlsx/katana).
+# docker compose -f docker-compose.yml -f docker-compose.pdtools.yml up -d --build backend
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.osint
+      args:
+        WITH_PD_TOOLS: "1"

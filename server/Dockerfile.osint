@@ -5,7 +5,7 @@
 FROM golang:1.27.3-alpine AS builder
 
 WORKDIR /app
-ENV GOPROXY=https://goproxy.ru,direct
+ENV GOPROXY=https://proxy.golang.org,https://goproxy.ru,direct
 ENV GOSUMDB=off
 COPY go.mod go.sum ./
 RUN go mod download
@@ -13,12 +13,11 @@ COPY . .
 ARG WITH_PD_TOOLS=0
 RUN mkdir -p /out
 RUN if [ "$WITH_PD_TOOLS" = "1" ]; then \
-      GOBIN=/out go install \
-        github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
-        github.com/projectdiscovery/httpx/cmd/httpx@latest \
-        github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
-        github.com/projectdiscovery/tlsx/cmd/tlsx@latest \
-        github.com/projectdiscovery/katana/cmd/katana@latest; \
+      GOBIN=/out go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
+      GOBIN=/out go install github.com/projectdiscovery/httpx/cmd/httpx@latest && \
+      GOBIN=/out go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
+      GOBIN=/out go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest && \
+      GOBIN=/out go install github.com/projectdiscovery/katana/cmd/katana@latest; \
     fi
 RUN go build -o stare-api ./cmd/stare-api/main.go
 
@@ -88,7 +87,12 @@ ENV PATH="/opt/osint/bin:${PATH}" \
     NUCLEI_BINARY=/usr/local/bin/nuclei \
     NUCLEI_TEMPLATES=/root/nuclei-templates \
     NUCLEI_SEVERITY=critical,high \
-    NUCLEI_TIMEOUT=5m
+    NUCLEI_TIMEOUT=5m \
+    SUBFINDER_BIN=/usr/local/bin/subfinder \
+    HTTPX_BIN=/usr/local/bin/httpx \
+    NAABU_BIN=/usr/local/bin/naabu \
+    TLSX_BIN=/usr/local/bin/tlsx \
+    KATANA_BIN=/usr/local/bin/katana
 
 WORKDIR /app
 COPY --from=builder /out/ /usr/local/bin/
