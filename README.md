@@ -172,6 +172,9 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 - **Поддомен-паттерны**: `{handle}.github.io`, gitlab.io, wordpress, blogspot, vercel, netlify, pages.dev и т.п. — с отсевом parked/404-заглушек.
 - **Variant expansion**: производные ника (`yami_kuru`, `yami-kuru`, `yamikuru`, `_official`) проверяются только по реестру, помечаются `variant_of` и пониженным confidence.
 - **Deep mode** (`PEOPLE_DEEP=1`): Maigret `--all-sites`, WhatsMyName без среза, снятие лимита верификации; `--nsfw` — только при отдельном `PEOPLE_ALLOW_NSFW=1`.
+- **Discovery/архивы**: urlscan.io search, HN Algolia, grep.app (keyless), опционально Brave/SerpAPI (`BRAVE_API_KEY`/`SERPAPI_KEY`). Упоминания вынесены в `mentions[]` и не считаются аккаунтами. urlscan/grep.app могут отвечать `403/429` — это видно как `error` коллектора, скан продолжается.
+- **Пивоты**: Wayback availability → `archived_url/archived_at`; sha256 аватара → `avatar_hash` (кросс-сигнал Actor, только публичные URL).
+- Публичные `mentions[]` и sensitive-аккаунты не влияют на Actor и скрыты/отделены в UI.
 - **Maigret по умолчанию работает без лимита сайтов**; `MAIGRET_MAX_SITES=0` (или пусто) = весь список, число — ограничение для быстрого режима.
 - Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники и считает `score`. По умолчанию показываются только `existence=confirmed`; остальное — через `show low-confidence / unverified`.
 

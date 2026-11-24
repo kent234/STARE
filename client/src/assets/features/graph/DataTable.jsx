@@ -23,8 +23,9 @@ function PeopleTable({ data }) {
   const collectors = data.collectors || [];
   const versions = Object.entries(data.versions || {});
   const signals = data.actor?.signals || [];
+  const mentions = data.mentions || [];
   const hasAny = allAccounts.length || registrations.length || removed.length || collectors.length
-    || (data.breaches || []).length || data.phone;
+    || mentions.length || (data.breaches || []).length || data.phone;
 
   return (
     <div className="table-wrapper">
@@ -183,6 +184,25 @@ function PeopleTable({ data }) {
                   <td>{item.handle}</td>
                   <td className="risky-status">{item.http_status || 410}</td>
                   <td className="clickable-cell">{item.url || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {mentions.length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">MENTIONS <span>{mentions.length} · not accounts</span></h3>
+          <table className="terminal-table">
+            <thead><tr><th>SOURCE</th><th>TITLE</th><th>URL</th><th>CONTEXT</th></tr></thead>
+            <tbody>
+              {mentions.map(item => (
+                <tr key={item.id} className="data-row">
+                  <td className="vuln-name">{item.source}</td>
+                  <td>{item.title || '-'}</td>
+                  <td className="clickable-cell">{item.url}</td>
+                  <td className="obs-summary">{item.context || '-'}</td>
                 </tr>
               ))}
             </tbody>

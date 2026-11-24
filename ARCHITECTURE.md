@@ -84,7 +84,10 @@ Coverage is extended by a declarative registry (`data/platforms.json`:
 status/json_path/body_contains detectors), `{handle}.<host>` pattern checks and
 variant expansion. `PEOPLE_DEEP=1` switches Maigret to `--all-sites`, removes
 the WhatsMyName slice and verification limit; `PEOPLE_ALLOW_NSFW=1` is a
-separate opt-in for adult platforms.
+separate opt-in for adult platforms. Discovery adds `mentions[]` (urlscan,
+HN Algolia, grep.app, optional Brave/SerpAPI) without turning them into
+accounts. Post-processing adds Wayback snapshots (`archived_url`) and sha256
+avatar hashes for actor correlation; both only fetch public URLs.
 
 All external tools are optional: missing binary = source skipped, scan continues.
 Paths: `SUBFINDER_BIN`, `HTTPX_BIN`, `NAABU_BIN`, `TLSX_BIN`, `KATANA_BIN`.

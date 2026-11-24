@@ -51,6 +51,9 @@ test('profile URL enriches account with public metadata', async ({ page }) => {
       },
     ],
     actor: { id: 'actor:https://vk.com/test', label: 'Test Profile', confidence_tier: 'high', accounts: ['account:vk:test'] },
+    mentions: [
+      { id: 'mention:grepapp:test', source: 'grepapp', url: 'https://github.com/a/b/blob/HEAD/x', title: 'a/b/x', context: 'test@example.com' },
+    ],
     removed: [
       { id: 'account:github:gone', platform: 'github', handle: 'gone', url: 'https://github.com/gone', http_status: 404 },
     ],
@@ -203,6 +206,9 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
       email, domain: 'example.com', format: true, dns: true, disposable: false,
       role: false, free: true, whitelist: false, mx: ['mx.example.com'],
     },
+    mentions: [
+      { id: 'mention:grepapp:test', source: 'grepapp', url: 'https://github.com/a/b/blob/HEAD/x', title: 'a/b/x', context: 'test@example.com' },
+    ],
     removed: [
       { id: 'account:github:gone', platform: 'github', handle: 'gone', url: 'https://github.com/gone', http_status: 404 },
     ],
@@ -246,4 +252,6 @@ test('email MVP shows Microsoft account and email intelligence', async ({ page }
   await page.getByLabel(/show sensitive accounts/).check();
   await expect(page.locator('.table-wrapper')).toContainText('pornhub');
   await expect(page.locator('.table-wrapper')).toContainText('SENSITIVE PLATFORMS');
+  await expect(page.locator('.table-wrapper')).toContainText('MENTIONS');
+  await expect(page.locator('.table-wrapper')).toContainText('a/b/x');
 });

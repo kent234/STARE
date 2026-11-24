@@ -33,6 +33,14 @@
 | `TestEvidenceTier` | blocked, single confirmed, multi confirmed | low / medium / high |
 | `TestSensitivePlatforms` | Pornhub/OnlyFans/tinder vs github | чувствительные помечаются |
 
+## `discovery_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestExtractMentions` | grep.app/HN mention + дубль + обычный аккаунт | 2 уникальных mention, аккаунт не попадает |
+| `TestSafePublicURL` | localhost, 127.0.0.1, file://, ftp:// | SSRF-фильтр отклоняет |
+| `TestSearchAPIKeysPresent` | без ключей / с Brave | missing vs доступен |
+
 ## `registry_test.go`
 
 | Тест | Сценарий | Ожидание |

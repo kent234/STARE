@@ -168,6 +168,9 @@ func isPublicIP(ip net.IP) bool {
 	return true
 }
 
+// IsPublicIP — экспорт SSRF-фильтра для других пакетов (People pivots).
+func IsPublicIP(ip net.IP) bool { return isPublicIP(ip) }
+
 // isPublicIPString — вариант для JSON/строковых целей.
 func isPublicIPString(value string) bool {
 	return isPublicIP(net.ParseIP(strings.TrimSpace(value)))

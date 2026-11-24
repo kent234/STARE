@@ -83,7 +83,11 @@ type Account struct {
 	// Такие аккаунты скрыты по умолчанию и не влияют на Actor.
 	Sensitive bool `json:"sensitive,omitempty"`
 	// VariantOf — исходный ник, если аккаунт найден через variant expansion.
-	VariantOf   string `json:"variant_of,omitempty"`
+	VariantOf string `json:"variant_of,omitempty"`
+	// Архив и хэш аватара — пивоты для корреляции и доказательства.
+	ArchivedURL string `json:"archived_url,omitempty"`
+	ArchivedAt  string `json:"archived_at,omitempty"`
+	AvatarHash  string `json:"avatar_hash,omitempty"`
 	Score       int    `json:"score"`
 	MatchScore  int    `json:"match_score,omitempty"`
 	MatchReason string `json:"match_reason,omitempty"`
@@ -149,6 +153,7 @@ type Result struct {
 	Versions      map[string]string     `json:"versions,omitempty"`
 	Observations  []scanner.Observation `json:"observations"`
 	Accounts      []Account             `json:"accounts"`
+	Mentions      []Mention             `json:"mentions,omitempty"`
 	Removed       []RemovedAccount      `json:"removed,omitempty"`
 	Registrations []Registration        `json:"registrations,omitempty"`
 	Actor         *Actor                `json:"actor,omitempty"`
@@ -173,6 +178,10 @@ var collectors = []Collector{
 	&RegistryCollector{},
 	&VariantCollector{},
 	&SubdomainPatternCollector{},
+	&URLScanCollector{},
+	&HNMentionsCollector{},
+	&GrepAppCollector{},
+	&SearchAPICollector{},
 	&HoleheCollector{},
 	&GravatarCollector{},
 	&MicrosoftCollector{},
@@ -266,6 +275,14 @@ func Run(ctx context.Context, target string) Result {
 		}
 		appliedCollectors = append(appliedCollectors, collector.Name())
 
+		// Опциональный поиск без API-ключа не запускается и помечается missing.
+		if collector.Name() == "search_api" && !searchAPIKeysPresent() {
+			mu.Lock()
+			statuses = append(statuses, CollectorStatus{Name: "search_api", Status: CollectorMissing})
+			mu.Unlock()
+			continue
+		}
+
 		// Внешний CLI может отсутствовать. Это missing, а не «ничего не нашёл».
 		if envKey, binaries, required := collectorRequirement(collector.Name()); required {
 			if _, ok := lookBinary(envKey, binaries...); !ok {
@@ -320,6 +337,7 @@ func Run(ctx context.Context, target string) Result {
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
 
 	res.Observations = observations
+	res.Mentions = ExtractMentions(observations)
 	res.Email = ExtractEmailIntel(observations)
 	res.Accounts, res.Breaches, res.Phone, res.Registrations = Normalize(observations)
 	res.Accounts, res.Removed = VerifyAccountURLs(ctx, res.Accounts)
@@ -341,6 +359,18 @@ func Run(ctx context.Context, target string) Result {
 		DurationMS:   enrichDuration.Milliseconds(),
 	})
 
+	// Пивоты: архивные снимки и хэши аватаров. Оба работают только по
+	// публичным URL и не меняют existence.
+	var archived, hashed int
+	var archiveDuration, hashDuration time.Duration
+	res.Accounts, archived, archiveDuration = EnrichArchives(ctx, res.Accounts, 10)
+	res.Accounts, hashed, hashDuration = EnrichAvatarHashes(ctx, res.Accounts, 10)
+	refreshAccountEvidence(res.Accounts)
+	statuses = append(statuses,
+		CollectorStatus{Name: "archives", Status: CollectorRan, Observations: archived, Kept: archived, DurationMS: archiveDuration.Milliseconds()},
+		CollectorStatus{Name: "avatar_hash", Status: CollectorRan, Observations: hashed, Kept: hashed, DurationMS: hashDuration.Milliseconds()},
+	)
+
 	res.Actor = BuildActor(target, res.Accounts)
 
 	// Kept — сколько финальных аккаунтов реально опирается на коллектор.
@@ -349,6 +379,14 @@ func Run(ctx context.Context, target string) Result {
 			if contains(acc.Sources, statuses[i].Name) {
 				statuses[i].Kept++
 			}
+		}
+		switch statuses[i].Name {
+		case "enrichment":
+			statuses[i].Kept = enriched
+		case "archives":
+			statuses[i].Kept = archived
+		case "avatar_hash":
+			statuses[i].Kept = hashed
 		}
 	}
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
@@ -368,6 +406,8 @@ func collectorApplies(name string, kind Kind) bool {
 		return (kind == KindUsername || kind == KindProfileURL) && variantsEnabled() && registryEnabled()
 	case "subdomain_patterns":
 		return (kind == KindUsername || kind == KindProfileURL) && patternsEnabled()
+	case "urlscan_search", "hn_algolia", "grepapp", "search_api":
+		return kind == KindUsername || kind == KindProfileURL
 	case "blackbird":
 		return kind == KindUsername || kind == KindProfileURL || kind == KindEmail
 	case "profile":
@@ -867,7 +907,13 @@ func actorSignals(accounts []Account, target string) []string {
 		if name != "" && name != normalizeSignalName(acc.Handle) {
 			names[name]++
 		}
-		if avatar := normalizeSignalAvatar(acc.Avatar); avatar != "" {
+		avatar := ""
+		if acc.AvatarHash != "" {
+			avatar = "hash:" + acc.AvatarHash
+		} else {
+			avatar = normalizeSignalAvatar(acc.Avatar)
+		}
+		if avatar != "" {
 			avatars[avatar]++
 		}
 		for _, link := range acc.Links {
