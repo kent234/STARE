@@ -305,6 +305,7 @@ function DataTable({ data }) {
     payload: obs.payload || {},
   }));
 
+  const findings = Array.isArray(data.findings) ? data.findings : [];
   const vulnerabilities = Array.isArray(data.vulnerabilities) ? data.vulnerabilities : [];
   const vulnRows = vulnerabilities.map((v, i) => ({
     id: `vuln:${v.template_id || 'unknown'}:${i}`,
@@ -381,6 +382,32 @@ function DataTable({ data }) {
                     {host.http ? `${host.http.status_code || '-'} ${host.http.title || ''}`.trim() : '-'}
                   </td>
                   <td>{host.tls?.length ? `${host.tls.length} cert(s)` : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {findings.length > 0 && (
+        <div className="table-section">
+          <h3 className="table-title">
+            FINDINGS <span>{findings.length} · local + observed</span>
+          </h3>
+          <table className="terminal-table">
+            <thead><tr><th>SEVERITY</th><th>TITLE</th><th>SOURCE</th><th>CONFIDENCE</th><th>HOST</th><th>CVE</th><th>EVIDENCE</th></tr></thead>
+            <tbody>
+              {findings.map(item => (
+                <tr key={item.id} className="data-row">
+                  <td className={['critical', 'high'].includes(item.severity) ? 'risky-status' : 'safe-status'}>
+                    {(item.severity || 'unknown').toUpperCase()}
+                  </td>
+                  <td className="vuln-name">{item.title}</td>
+                  <td>{item.source || '-'}</td>
+                  <td>{item.confidence || '-'}</td>
+                  <td className="clickable-cell">{item.host || '-'}</td>
+                  <td className="obs-summary">{(item.cve || []).join(', ') || item.template_id || '-'}</td>
+                  <td className="obs-summary">{item.evidence || '-'}</td>
                 </tr>
               ))}
             </tbody>
@@ -575,7 +602,7 @@ function DataTable({ data }) {
         <div className="table-section">
           <h3 className="table-title">CLOUD BUCKETS <span>{data.cloud_buckets.length}</span></h3>
           <table className="terminal-table">
-            <thead><tr><th>PROVIDER</th><th>NAME</th><th>STATUS</th><th>ACCESS</th><th>URL</th></tr></thead>
+            <thead><tr><th>PROVIDER</th><th>NAME</th><th>STATUS</th><th>ACCESS</th><th>CONFIDENCE</th><th>EVIDENCE</th><th>URL</th></tr></thead>
             <tbody>
               {data.cloud_buckets.map((bucket, i) => (
                 <tr key={`${bucket.provider}-${bucket.name}-${i}`} className="data-row">
@@ -583,6 +610,8 @@ function DataTable({ data }) {
                   <td>{bucket.name}</td>
                   <td>{bucket.status}</td>
                   <td className={bucket.public ? 'risky-status' : 'safe-status'}>{bucket.public ? 'PUBLIC' : 'PRIVATE'}</td>
+                  <td>{bucket.confidence || '-'}</td>
+                  <td className="obs-summary">{bucket.evidence || '-'}</td>
                   <td className="clickable-cell">{bucket.url}</td>
                 </tr>
               ))}
@@ -676,7 +705,7 @@ function DataTable({ data }) {
 
       <div className="table-section">
         <h3 className="table-title">
-          VULNERABILITIES (NUCLEI) <span>{vulnRows.length} findings</span>
+          NUCLEI TEMPLATES (RAW) <span>{vulnRows.length} · see FINDINGS</span>
         </h3>
         <table className="terminal-table">
           <thead>

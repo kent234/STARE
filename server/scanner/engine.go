@@ -34,6 +34,7 @@ type ScanResult struct {
 	Technologies        []string            `json:"technologies"`
 	Observations        []Observation       `json:"observations,omitempty"`
 	Vulnerabilities     []NucleiFinding     `json:"vulnerabilities,omitempty"`
+	Findings            []Finding           `json:"findings,omitempty"`
 	HTTP                []HTTPProbe         `json:"http,omitempty"`
 	TLS                 []TLSInfo           `json:"tls,omitempty"`
 	Hosts               []HostInfo          `json:"hosts,omitempty"`
@@ -628,8 +629,22 @@ func RunFullScan(ctx context.Context, target string) *ScanResult {
 
 	result.Hosts = buildHosts(target, apexIPs, result)
 
-	result.Vulnerabilities = EnrichNucleiWithKEV(ctx, result.Vulnerabilities)
-	result.Vulnerabilities = EnrichNucleiWithEPSS(ctx, result.Vulnerabilities)
+	// Nuclei и Shodan обогащаются KEV/EPSS одним прогоном, но остаются
+	// разными сущностями: local-подтверждение против observed-заявления.
+	observedCVEs := shodanCVEFindings(result.Observations)
+	nucleiCount := len(result.Vulnerabilities)
+	combined := append([]NucleiFinding{}, result.Vulnerabilities...)
+	combined = append(combined, observedCVEs...)
+	combined = EnrichNucleiWithKEV(ctx, combined)
+	combined = EnrichNucleiWithEPSS(ctx, combined)
+	result.Vulnerabilities = append([]NucleiFinding{}, combined[:nucleiCount]...)
+	observedCVEs = combined[nucleiCount:]
+	for i := range observedCVEs {
+		if observedCVEs[i].KEV || observedCVEs[i].EPSS >= 0.1 {
+			observedCVEs[i].Severity = "high"
+		}
+	}
+	result.Findings = BuildFindings(target, result.Vulnerabilities, observedCVEs, result.DNSChecks, result.CloudBuckets)
 
 	// Все параллельные стадии пишут срезы в произвольном порядке.
 	// Стабилизируем их перед отдачей: иначе diff между прогонами и

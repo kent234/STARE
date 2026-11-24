@@ -20,13 +20,15 @@ type ThreatHit struct {
 	Detail    string `json:"detail,omitempty"`
 }
 
-// CloudBucket — найденное облачное хранилище.
+// CloudBucket — облачное хранилище с доказательством, а не «кандидат».
 type CloudBucket struct {
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Status   int    `json:"status"`
-	Public   bool   `json:"public"`
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	Status     int    `json:"status"`
+	Public     bool   `json:"public"`
+	Confidence string `json:"confidence,omitempty"`
+	Evidence   string `json:"evidence,omitempty"`
 }
 
 func httpGetBody(ctx context.Context, link string, limit int64) ([]byte, int, error) {
@@ -208,8 +210,7 @@ func EnrichNucleiWithEPSS(ctx context.Context, findings []NucleiFinding) []Nucle
 
 // CheckCloudBuckets ищет публичные/существующие S3/GCS/Azure buckets по имени домена.
 func CheckCloudBuckets(ctx context.Context, domain string) []CloudBucket {
-	base := strings.Split(domain, ".")[0]
-	names := []string{base, "www-" + base, base + "-dev", base + "-backup", base + "-assets", base + "-static"}
+	names := bucketNames(domain)
 	providers := []struct {
 		name string
 		url  func(string) string
@@ -235,7 +236,9 @@ func CheckCloudBuckets(ctx context.Context, domain string) []CloudBucket {
 				defer wg.Done()
 				defer func() { <-sem }()
 				link := provider.url(name)
-				req, err := http.NewRequestWithContext(ctx, http.MethodHead, link, nil)
+				// GET, а не HEAD: публичность подтверждается телом листинга.
+				// 403/404 — не доказательство существования и не попадают в отчёт.
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
 				if err != nil {
 					return
 				}
@@ -244,16 +247,25 @@ func CheckCloudBuckets(ctx context.Context, domain string) []CloudBucket {
 					return
 				}
 				defer resp.Body.Close()
-				if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusForbidden {
+				if resp.StatusCode != http.StatusOK {
 					return
+				}
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+				evidence := "HTTP 200"
+				confidence := "medium"
+				if bucketListing(body) {
+					evidence = "public listing marker"
+					confidence = "high"
 				}
 				mu.Lock()
 				buckets = append(buckets, CloudBucket{
-					Provider: provider.name,
-					Name:     name,
-					URL:      link,
-					Status:   resp.StatusCode,
-					Public:   resp.StatusCode == http.StatusOK,
+					Provider:   provider.name,
+					Name:       name,
+					URL:        link,
+					Status:     resp.StatusCode,
+					Public:     true,
+					Confidence: confidence,
+					Evidence:   evidence,
 				})
 				mu.Unlock()
 			}()
@@ -261,4 +273,31 @@ func CheckCloudBuckets(ctx context.Context, domain string) []CloudBucket {
 	}
 	wg.Wait()
 	return buckets
+}
+
+func bucketNames(domain string) []string {
+	base := strings.Split(domain, ".")[0]
+	if base == "" {
+		return nil
+	}
+	return uniqueSorted([]string{
+		base,
+		"www-" + base,
+		base + "-dev",
+		base + "-prod",
+		base + "-backup",
+		base + "-data",
+		base + "-assets",
+		base + "-static",
+	})
+}
+
+func bucketListing(body []byte) bool {
+	lower := strings.ToLower(string(body))
+	for _, marker := range []string{"<listbucketresult", "<enumerationresults", "<contents>", `"items":`} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }

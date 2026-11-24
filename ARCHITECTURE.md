@@ -60,7 +60,10 @@ server/
 Subdomains are normalized/validated (`normalizeSubdomain`), endpoints are
 filtered to in-scope HTTP(S) URLs (`filterEndpoints`), and `CheckEmailDNS`
 queries SPF/DMARC/CAA/DNSSEC over DoH. `artifacts` falls back from HTTPS to
-HTTP and parses `Disallow`/`Allow`/`Sitemap`. All parallel slices are sorted
+HTTP and parses `Disallow`/`Allow`/`Sitemap`. `findings[]` is the unified
+reporting layer: Nuclei (local/high), Shodan CVEs (observed/medium), DNS hygiene
+and public buckets, each with severity/confidence/evidence; `vulnerabilities[]`
+remains the raw Nuclei output. All parallel slices are sorted
 before output: subdomains, sources, IPs, observations, HTTP/TLS,
 vulnerabilities, buckets and errors.
 

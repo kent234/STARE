@@ -113,7 +113,9 @@ export NUCLEI_TIMEOUT=5m
 - `endpoints[]` фильтруются по scope: только HTTP(S), без шаблонов `$%7B...%7D`, статики, `w3.org`/schema-URL; есть `endpoints_by_host` и лимит с флагом `truncated`.
 - `dns_checks`: SPF (несколько записей → PermError), DMARC (policy), CAA, DNSSEC через DoH (без ключей), с человекочитаемыми `issues`.
 - `artifacts`: fallback HTTPS→HTTP, разбор `Disallow`/`Allow`/`Sitemap`, `server_header` с реальных хостов (`server_headers` по хостам).
-- `hosts[]` объединяет IP, wildcard/private, порты, лучший HTTP-probe и TLS-сертификаты в одну запись. Docker-образ уже содержит `nuclei` v3.11.1 и официальные шаблоны (`/root/nuclei-templates`); переменные `NUCLEI_*` можно переопределить в `docker-compose.yml`/`.env`. Альтернатива — сборка с библиотекой: `go build -tags nuclei` (потребует вернуть зависимости Nuclei в `go.mod`).
+- `hosts[]` объединяет IP, wildcard/private, порты, лучший HTTP-probe и TLS-сертификаты в одну запись.
+- `findings[]` — единая модель отчёта: `{severity, source: local|observed, confidence, host, cve, evidence}`; Nuclei, Shodan CVE, DNS-проблемы и публичные bucket'ы больше не разбросаны по разным полям. KEV/EPSS обогащают и observed-CVE.
+- Cloud buckets: `403` больше не считается существующим; публичность подтверждается `200` + маркером листинга, есть `confidence`/`evidence` и варианты `-backup/-dev/-prod/-data`. Docker-образ уже содержит `nuclei` v3.11.1 и официальные шаблоны (`/root/nuclei-templates`); переменные `NUCLEI_*` можно переопределить в `docker-compose.yml`/`.env`. Альтернатива — сборка с библиотекой: `go build -tags nuclei` (потребует вернуть зависимости Nuclei в `go.mod`).
 
 ---
 

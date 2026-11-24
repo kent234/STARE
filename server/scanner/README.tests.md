@@ -36,6 +36,15 @@
 | `TestActiveProbeTargets` | публичный/приватный/смешанный/нерезолвящийся поддомен | активные проверки только без приватных адресов |
 | `TestUniqueSortedIsSorted` / `TestSortHelpersDeterministic` | неотсортированные входы | стабильный порядок между прогонами |
 
+## `findings_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestShodanCVEFindings` | Shodan observation с `vulns` | CVE-записи с indicator |
+| `TestBuildFindings` | Nuclei critical + Shodan CVE + DNS + public bucket | единый список, severity/source/confidence, critical первым |
+| `TestDedupFindings` | дубль Nuclei | одна запись |
+| `TestBucketNamesAndListing` | варианты имени, XML-листинг vs HTML | варианты + маркер листинга |
+
 ## `hosts_test.go`
 
 | Тест | Сценарий | Ожидание |

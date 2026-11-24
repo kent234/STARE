@@ -334,6 +334,7 @@ function GraphVisualizer({ data }) {
 
     // === Уязвимости Nuclei: target → [VULNERABILITIES] → finding → matched infra ===
     const vulnerabilities = !isPeople && Array.isArray(data.vulnerabilities) ? data.vulnerabilities : [];
+    const findings = !isPeople && Array.isArray(data.findings) ? data.findings : [];
     if (vulnerabilities.length > 0) {
       const vulnGroupId = '__vulns__';
       addNode(vulnGroupId, `VULNERABILITIES · ${vulnerabilities.length}`, 'vuln-group');
@@ -854,6 +855,12 @@ function GraphVisualizer({ data }) {
         if (data.dns_checks) info.DNSChecks = data.dns_checks;
         info.Observations = observations.length;
         info.Vulnerabilities = vulnerabilities.length;
+        info.Findings = findings.length;
+        if (findings.length > 0) {
+          const bySeverity = {};
+          findings.forEach(f => { bySeverity[f.severity || 'unknown'] = (bySeverity[f.severity || 'unknown'] || 0) + 1; });
+          info.FindingsBySeverity = bySeverity;
+        }
         info.ScanID = data.scan_id || 'n/a';
         info.SchemaVersion = data.schema_version || 'n/a';
         if (data.scan_meta?.tools) {
