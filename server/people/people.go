@@ -81,7 +81,9 @@ type Account struct {
 	EvidenceURLs []string `json:"evidence_urls,omitempty"`
 	// Sensitive — платформа для взрослых/чувствительные данные.
 	// Такие аккаунты скрыты по умолчанию и не влияют на Actor.
-	Sensitive   bool   `json:"sensitive,omitempty"`
+	Sensitive bool `json:"sensitive,omitempty"`
+	// VariantOf — исходный ник, если аккаунт найден через variant expansion.
+	VariantOf   string `json:"variant_of,omitempty"`
 	Score       int    `json:"score"`
 	MatchScore  int    `json:"match_score,omitempty"`
 	MatchReason string `json:"match_reason,omitempty"`
@@ -168,6 +170,9 @@ var collectors = []Collector{
 	&MaigretCollector{},
 	&BlackbirdCollector{},
 	&WhatsMyNameCollector{},
+	&RegistryCollector{},
+	&VariantCollector{},
+	&SubdomainPatternCollector{},
 	&HoleheCollector{},
 	&GravatarCollector{},
 	&MicrosoftCollector{},
@@ -282,7 +287,11 @@ func Run(ctx context.Context, target string) Result {
 		go func(collector Collector, cTarget string) {
 			defer wg.Done()
 			started := time.Now()
-			cctx, cancel := context.WithTimeout(ctx, 900*time.Second)
+			timeout := 900 * time.Second
+			if deepMode() {
+				timeout = 1800 * time.Second
+			}
+			cctx, cancel := context.WithTimeout(ctx, timeout)
 			obs, err := collector.Collect(cctx, cTarget)
 			cancel()
 
@@ -353,6 +362,12 @@ func collectorApplies(name string, kind Kind) bool {
 	switch name {
 	case "sherlock", "maigret", "whatsmyname", "githubuser", "gitlab", "keybase":
 		return kind == KindUsername || kind == KindProfileURL
+	case "registry":
+		return (kind == KindUsername || kind == KindProfileURL) && registryEnabled()
+	case "variants":
+		return (kind == KindUsername || kind == KindProfileURL) && variantsEnabled() && registryEnabled()
+	case "subdomain_patterns":
+		return (kind == KindUsername || kind == KindProfileURL) && patternsEnabled()
 	case "blackbird":
 		return kind == KindUsername || kind == KindProfileURL || kind == KindEmail
 	case "profile":
@@ -526,6 +541,9 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 			(acc.PageNegative == "" || negative < acc.PageNegative) {
 			acc.PageNegative = negative
 		}
+		if variant := str(payload["variant_of"]); variant != "" && acc.VariantOf == "" {
+			acc.VariantOf = variant
+		}
 		if acc.Name == "" || betterName(acc.Name, cleanText(str(payload["name"]))) {
 			acc.Name = cleanText(str(payload["name"]))
 		}
@@ -635,8 +653,12 @@ func betterName(current, candidate string) bool {
 // +30 provider, +match_score/10. Итог ограничен 0..100.
 func sourceWeight(source string) int {
 	switch source {
-	case "profile", "githubuser", "gitlab", "keybase", "microsoft", "pgp", "gravatar":
+	case "profile", "githubuser", "gitlab", "keybase", "microsoft", "pgp", "gravatar", "registry":
 		return 12
+	case "subdomain_patterns":
+		return 10
+	case "variants":
+		return 4
 	case "maigret":
 		return 8
 	case "sherlock", "blackbird":

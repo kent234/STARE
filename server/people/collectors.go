@@ -28,6 +28,14 @@ func lookBinary(envKey string, names ...string) (string, bool) {
 	return "", false
 }
 
+// deepMode включает полный перебор источниками. Это дорого по времени,
+// поэтому по умолчанию выключено.
+func deepMode() bool { return os.Getenv("PEOPLE_DEEP") == "1" }
+
+// nsfwAllowed — отдельная политика: даже в deep mode взрослые платформы
+// не включаются без явного разрешения.
+func nsfwAllowed() bool { return os.Getenv("PEOPLE_ALLOW_NSFW") == "1" }
+
 func runBinary(ctx context.Context, bin string, args ...string) string {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	out, err := cmd.CombinedOutput()
@@ -110,7 +118,11 @@ func (c *SherlockCollector) Collect(ctx context.Context, target string) ([]scann
 	if !ok {
 		return nil, nil
 	}
-	out := runBinary(ctx, bin, target, "--print-found", "--no-color")
+	args := []string{target, "--print-found", "--no-color"}
+	if nsfwAllowed() {
+		args = append(args, "--nsfw")
+	}
+	out := runBinary(ctx, bin, args...)
 	return parseFoundLines("sherlock", out, target), nil
 }
 
@@ -127,7 +139,11 @@ func (c *MaigretCollector) Collect(ctx context.Context, target string) ([]scanne
 	}
 	obs := runMaigretJSON(ctx, bin, target)
 	if len(obs) == 0 {
-		out := runBinary(ctx, bin, target, "--no-color", "--timeout", "10")
+		args := []string{target, "--no-color", "--timeout", "10"}
+		if deepMode() {
+			args = append(args, "--all-sites")
+		}
+		out := runBinary(ctx, bin, args...)
 		obs = parseFoundLines("maigret", out, target)
 	}
 	return obs, nil
@@ -301,7 +317,10 @@ func onlyDigits(s string) string {
 // maigretArgs собирает аргументы CLI. "0" или пустое значение = без --top-sites.
 func maigretArgs(target, maxSites string) []string {
 	args := []string{target, "--no-color", "--timeout", "10", "--json", "simple"}
-	if maxSites != "" && maxSites != "0" {
+	if deepMode() && (maxSites == "" || maxSites == "0") {
+		// Явный полный режим Maigret; без этого флага часть сайтов не проверяется.
+		args = append(args, "--all-sites")
+	} else if maxSites != "" && maxSites != "0" {
 		args = append(args, "--top-sites", maxSites)
 	}
 	return args

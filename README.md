@@ -168,6 +168,10 @@ cd client && npm run test:unit   # Node unit-тесты фронтенда
 - `Actor` — кластер хэндла, не «человек»: `high` только при 2+ независимых сигналах (`same_name`, `same_avatar`, `shared_link`, `profile_match`); `actor.id` нормализован (profile URL → handle, real name → slug).
 - Top-N подтверждённых аккаунтов обогащаются OG-метаданными (name/bio/avatar/links) — без этого кросс-сигналы невозможны.
 - `sensitive`-платформы (Pornhub, OnlyFans, dating и т.п.) скрыты по умолчанию, не входят в Actor и показываются отдельной секцией только по чекбоксу.
+- **Реестр платформ** (`server/people/data/platforms.json`): декларативные keyless-детекторы `status|json_path|body_contains|body_absent` для GitHub, GitLab, Keybase, Reddit, HN, Chess, Lichess, Steam, npm, PyPI, Docker Hub, Telegram, Mastodon, YouTube, TikTok, Minecraft, Roblox, Bluesky.
+- **Поддомен-паттерны**: `{handle}.github.io`, gitlab.io, wordpress, blogspot, vercel, netlify, pages.dev и т.п. — с отсевом parked/404-заглушек.
+- **Variant expansion**: производные ника (`yami_kuru`, `yami-kuru`, `yamikuru`, `_official`) проверяются только по реестру, помечаются `variant_of` и пониженным confidence.
+- **Deep mode** (`PEOPLE_DEEP=1`): Maigret `--all-sites`, WhatsMyName без среза, снятие лимита верификации; `--nsfw` — только при отдельном `PEOPLE_ALLOW_NSFW=1`.
 - **Maigret по умолчанию работает без лимита сайтов**; `MAIGRET_MAX_SITES=0` (или пусто) = весь список, число — ограничение для быстрого режима.
 - Дедупликация канонизирует платформы (`GitHub (user)` → `github`), мержит источники и считает `score`. По умолчанию показываются только `existence=confirmed`; остальное — через `show low-confidence / unverified`.
 

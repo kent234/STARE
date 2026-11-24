@@ -243,6 +243,10 @@ func (c *WhatsMyNameCollector) Collect(ctx context.Context, target string) ([]sc
 			max = n
 		}
 	}
+	if deepMode() {
+		// Deep mode: весь список WhatsMyName, а не произвольный срез.
+		max = len(data.Sites)
+	}
 	if len(data.Sites) > max {
 		data.Sites = data.Sites[:max]
 	}

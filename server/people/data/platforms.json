@@ -1,0 +1,167 @@
+{
+  "platforms": [
+    {
+      "name": "github",
+      "display": "GitHub API",
+      "url": "https://api.github.com/users/{handle}",
+      "detector": "status",
+      "confidence": "high",
+      "weight": 12
+    },
+    {
+      "name": "gitlab",
+      "display": "GitLab API",
+      "url": "https://gitlab.com/api/v4/users?username={handle}",
+      "detector": "json_path",
+      "path": "0.username",
+      "confidence": "high",
+      "weight": 12
+    },
+    {
+      "name": "keybase",
+      "display": "Keybase API",
+      "url": "https://keybase.io/_/api/1.0/user/lookup.json?username={handle}",
+      "detector": "json_path",
+      "path": "them.0.basics.username",
+      "confidence": "high",
+      "weight": 12
+    },
+    {
+      "name": "reddit",
+      "display": "Reddit API",
+      "url": "https://www.reddit.com/user/{handle}/about.json",
+      "detector": "json_path",
+      "path": "data.name",
+      "confidence": "high",
+      "weight": 12
+    },
+    {
+      "name": "hackernews",
+      "display": "Hacker News",
+      "url": "https://hacker-news.firebaseio.com/v0/user/{handle}.json",
+      "detector": "json_path",
+      "path": "id",
+      "confidence": "high",
+      "weight": 10
+    },
+    {
+      "name": "chess.com",
+      "display": "Chess.com API",
+      "url": "https://api.chess.com/pub/player/{handle}",
+      "detector": "json_path",
+      "path": "username",
+      "confidence": "high",
+      "weight": 12
+    },
+    {
+      "name": "lichess",
+      "display": "Lichess",
+      "url": "https://lichess.org/api/user/{handle}",
+      "detector": "json_path",
+      "path": "username",
+      "confidence": "high",
+      "weight": 12
+    },
+    {
+      "name": "steam",
+      "display": "Steam",
+      "url": "https://steamcommunity.com/id/{handle}/?xml=1",
+      "detector": "body_contains",
+      "contains": "<steamID64>",
+      "confidence": "high",
+      "weight": 10
+    },
+    {
+      "name": "npm",
+      "display": "npm",
+      "url": "https://registry.npmjs.org/{handle}",
+      "detector": "json_path",
+      "path": "name",
+      "confidence": "high",
+      "weight": 10
+    },
+    {
+      "name": "pypi",
+      "display": "PyPI",
+      "url": "https://pypi.org/pypi/{handle}/json",
+      "detector": "json_path",
+      "path": "info.name",
+      "confidence": "high",
+      "weight": 10
+    },
+    {
+      "name": "dockerhub",
+      "display": "Docker Hub",
+      "url": "https://hub.docker.com/v2/users/{handle}/",
+      "detector": "json_path",
+      "path": "username",
+      "confidence": "high",
+      "weight": 10
+    },
+    {
+      "name": "telegram",
+      "display": "Telegram",
+      "url": "https://t.me/{handle}",
+      "detector": "body_contains",
+      "contains": "tgme_page_title",
+      "confidence": "medium",
+      "weight": 8
+    },
+    {
+      "name": "mastodon",
+      "display": "Mastodon (mastodon.social)",
+      "url": "https://mastodon.social/.well-known/webfinger?resource=acct:{handle}@mastodon.social",
+      "detector": "json_path",
+      "path": "subject",
+      "confidence": "medium",
+      "weight": 8
+    },
+    {
+      "name": "youtube",
+      "display": "YouTube",
+      "url": "https://www.youtube.com/@{handle}",
+      "detector": "body_contains",
+      "contains": "\"channelId\"",
+      "confidence": "medium",
+      "weight": 8
+    },
+    {
+      "name": "tiktok",
+      "display": "TikTok",
+      "url": "https://www.tiktok.com/@{handle}",
+      "detector": "body_contains",
+      "contains": "\"uniqueId\"",
+      "confidence": "low",
+      "weight": 5
+    },
+    {
+      "name": "minecraft",
+      "display": "Minecraft",
+      "url": "https://api.mojang.com/users/profiles/minecraft/{handle}",
+      "detector": "json_path",
+      "path": "name",
+      "confidence": "high",
+      "weight": 8
+    },
+    {
+      "name": "roblox",
+      "display": "Roblox",
+      "url": "https://users.roblox.com/v1/usernames/users",
+      "method": "POST",
+      "body": "{\"usernames\":[\"{handle}\"],\"excludeBannedUsers\":true}",
+      "detector": "json_path",
+      "path": "data.0.name",
+      "confidence": "high",
+      "weight": 8
+    },
+    {
+      "name": "bluesky",
+      "display": "Bluesky",
+      "url": "https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle={handle}.bsky.social",
+      "detector": "json_path",
+      "path": "did",
+      "confidence": "medium",
+      "weight": 8
+    }
+  ]
+}

@@ -165,6 +165,10 @@ func VerifyAccountURLs(ctx context.Context, accounts []Account) ([]Account, []Re
 }
 
 func verifyLimit() int {
+	if deepMode() {
+		// В deep mode проверяем всё, что нашли, а не первые 200.
+		return 100000
+	}
 	const fallback = 200
 	if raw := os.Getenv("PEOPLE_VERIFY_MAX"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
@@ -259,6 +263,7 @@ var strongAbsenceMarkers = []string{
 	"user not found",
 	"profile not found",
 	"page not found",
+	"site not found",
 	"account not found",
 	"couldn't find",
 	"could not find",

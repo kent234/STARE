@@ -33,6 +33,16 @@
 | `TestEvidenceTier` | blocked, single confirmed, multi confirmed | low / medium / high |
 | `TestSensitivePlatforms` | Pornhub/OnlyFans/tinder vs github | чувствительные помечаются |
 
+## `registry_test.go`
+
+| Тест | Сценарий | Ожидание |
+|---|---|---|
+| `TestLoadPlatforms` | встроенный `platforms.json` | ≥15 платформ, уникальные имена, keyless detectors |
+| `TestLookupJSONPath` / `TestDetectRegistry` | map/array/zero, status/json/body | корректное определение существования |
+| `TestRegistryBuilders` | handle с пробелом/кавычкой, profile URL, email | URL/body экранируются, email не идёт в registry |
+| `TestExpandVariants` / `TestSanitizeDNSLabel` | `yami_kuru`, невалидный label | производные ника, безопасный DNS-label |
+| `TestMaigretArgsModes` / `TestDeepModeSwitches` | normal/deep | `--all-sites` и снятый лимит только в deep |
+
 ## `enrich_test.go`
 
 | Тест | Сценарий | Ожидание |
