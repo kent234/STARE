@@ -99,17 +99,221 @@ var subdomainSuffixes = []string{
 	"glitch.me", "replit.app",
 }
 
-var missingSiteMarkers = []string{
-	"there isn't a github pages site here",
-	"site not found",
-	"page not found",
-	"project not found",
-	"repository not found",
-	"this site is not available",
-	"no such app",
-	"doesn't exist",
-	"does not exist",
-	"domain is available",
+type sitePatternVerdict int
+
+const (
+	siteAbsent sitePatternVerdict = iota
+	siteCandidate
+	siteConfirmed
+)
+
+type siteRule struct {
+	brand       string
+	negative    []string
+	generic     []string // generic substrings в title
+	titleSuffix []string
+}
+
+var defaultSiteRule = siteRule{
+	negative: []string{
+		"site not found",
+		"page not found",
+		"project not found",
+		"repository not found",
+		"this site is not available",
+		"no such app",
+		"doesn't exist",
+		"does not exist",
+		"domain is available",
+	},
+	generic: []string{
+		"site not found",
+		"page not found",
+		"project not found",
+		"not found",
+		"404",
+		"just a moment",
+		"welcome to nginx",
+	},
+}
+
+var siteRules = map[string]siteRule{
+	"notion.site": {
+		brand:    "notion",
+		negative: []string{"you do not have permission", "this page could not be found", "page not found"},
+		generic:  []string{"all-in-one workspace", "not found"},
+	},
+	"wordpress.com": {
+		brand:    "wordpress.com",
+		negative: []string{"site not found", "this site is not available", "doesn't exist", "does not exist"},
+		generic:  []string{"create a free website", "not found"},
+	},
+	"github.io": {
+		brand:    "github pages",
+		negative: []string{"there isn't a github pages site here", "site not found"},
+		generic:  []string{"github pages", "site not found", "not found"},
+	},
+	"gitlab.io": {
+		brand:    "gitlab pages",
+		negative: []string{"project not found", "page not found"},
+		generic:  []string{"gitlab pages", "project not found", "not found"},
+	},
+	"vercel.app": {
+		brand:    "vercel",
+		negative: []string{"deployment not found", "deployment_not_found", "the deployment could not be found"},
+		generic:  []string{"deployment", "not found"},
+	},
+	"netlify.app": {
+		brand:    "netlify",
+		negative: []string{"site not found", "page not found"},
+		generic:  []string{"site not found", "not found"},
+	},
+	"pages.dev": {
+		brand:    "cloudflare pages",
+		negative: []string{"project not found", "page not found"},
+		generic:  []string{"cloudflare pages", "project not found", "not found"},
+	},
+	"web.app": {
+		brand:    "firebase hosting",
+		negative: []string{"site not found", "page not found"},
+		generic:  []string{"firebase hosting", "site not found", "not found"},
+	},
+}
+
+func siteRuleFor(suffix string) siteRule {
+	if rule, ok := siteRules[suffix]; ok {
+		return rule
+	}
+	rule := defaultSiteRule
+	rule.brand = suffix
+	return rule
+}
+
+// classifySitePage отличает реальный личный сайт от generic landing:
+// подтверждение требует уникального title/og, а не просто HTTP 200.
+func classifySitePage(suffix, handle, body string) (sitePatternVerdict, string) {
+	rule := siteRuleFor(suffix)
+	lowerBody := strings.ToLower(body)
+	for _, marker := range rule.negative {
+		if strings.Contains(lowerBody, marker) {
+			return siteAbsent, ""
+		}
+	}
+
+	title := ogTitle(body)
+	if title == "" {
+		title = htmlTitle(body)
+	}
+	title = cleanSiteTitle(title, rule)
+	if isGenericSiteName(title, rule) {
+		if title == "" && !strings.Contains(lowerBody, "<html") {
+			return siteAbsent, ""
+		}
+		return siteCandidate, title
+	}
+	return siteConfirmed, title
+}
+
+func cleanSiteTitle(value string, rule siteRule) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	lower := strings.ToLower(value)
+	for _, suffix := range rule.titleSuffix {
+		if strings.HasSuffix(lower, strings.ToLower(suffix)) {
+			value = strings.TrimSpace(value[:len(value)-len(suffix)])
+			lower = strings.ToLower(value)
+		}
+	}
+	for _, separator := range []string{" | ", " – ", " - ", " — "} {
+		parts := strings.Split(value, separator)
+		if len(parts) < 2 {
+			continue
+		}
+		tail := strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
+		if isPlatformBrand(tail) && strings.TrimSpace(strings.Join(parts[:len(parts)-1], separator)) != "" {
+			return strings.TrimSpace(strings.Join(parts[:len(parts)-1], separator))
+		}
+	}
+	return value
+}
+
+func isPlatformBrand(value string) bool {
+	for _, brand := range []string{
+		"notion", "wordpress.com", "wordpress", "github pages", "gitlab pages",
+		"vercel", "netlify", "cloudflare pages", "firebase hosting", "firebase",
+	} {
+		if value == brand || strings.HasPrefix(value, brand+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+func isGenericSiteName(value string, rule siteRule) bool {
+	name := strings.ToLower(strings.TrimSpace(value))
+	if name == "" {
+		return true
+	}
+	if name == rule.brand || name == strings.ToLower(rule.brand)+".com" {
+		return true
+	}
+	switch name {
+	case "home", "index", "welcome", "notion", "wordpress", "wordpress.com", "vercel", "netlify", "firebase":
+		return true
+	}
+	for _, generic := range rule.generic {
+		if strings.Contains(name, generic) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildSiteObservation(suffix, handle, link, body string) *scanner.Observation {
+	return buildSiteObservationWithVariant(suffix, handle, link, body, "")
+}
+
+func buildSiteObservationWithVariant(suffix, handle, link, body, variantOf string) *scanner.Observation {
+	verdict, site := classifySitePage(suffix, handle, body)
+	switch verdict {
+	case siteAbsent:
+		return nil
+	case siteConfirmed:
+		payload := map[string]any{
+			"kind":          "provider",
+			"platform":      "personal_site",
+			"handle":        handle,
+			"url":           link,
+			"verified":      true,
+			"provider_name": suffix,
+			"name":          site,
+		}
+		if variantOf != "" {
+			payload["variant_of"] = variantOf
+		}
+		obs := Observation("subdomain_patterns", scanner.ConfidenceHigh, payload)
+		return &obs
+	default:
+		payload := map[string]any{
+			"platform":  suffix,
+			"handle":    handle,
+			"url":       link,
+			"verified":  false,
+			"candidate": true,
+		}
+		// Generic landing нельзя подтверждать повторной проверкой:
+		// его собственный title — negative-маркер для верификатора.
+		if title := cleanSiteTitle(htmlTitle(body), siteRuleFor(suffix)); title != "" {
+			payload["page_negative"] = title
+		}
+		if variantOf != "" {
+			payload["variant_of"] = variantOf
+		}
+		obs := Observation("subdomain_patterns", scanner.ConfidenceLow, payload)
+		return &obs
+	}
 }
 
 func (c *SubdomainPatternCollector) Collect(ctx context.Context, target string) ([]scanner.Observation, error) {
@@ -141,27 +345,16 @@ func (c *SubdomainPatternCollector) Collect(ctx context.Context, target string) 
 			if err != nil || status < 200 || status >= 400 {
 				return
 			}
-			lower := strings.ToLower(body)
-			for _, marker := range missingSiteMarkers {
-				if strings.Contains(lower, marker) {
-					return
-				}
-			}
-			payload := map[string]any{
-				"platform": suffix,
-				"handle":   handle,
-				"url":      link,
-				"verified": true,
-				// Страница уже проверена на 200 + отсутствие missing-маркеров;
-				// marker нужен только чтобы повторная верификация не сочла
-				// сайт soft-404 из-за ника в поддомене, а не в title.
-				"page_marker": "</html>",
-			}
+			variantOf := ""
 			if handle != strings.ToLower(original) {
-				payload["variant_of"] = original
+				variantOf = original
+			}
+			built := buildSiteObservationWithVariant(suffix, handle, link, body, variantOf)
+			if built == nil {
+				return
 			}
 			mu.Lock()
-			obs = append(obs, Observation("subdomain_patterns", scanner.ConfidenceMedium, payload))
+			obs = append(obs, *built)
 			mu.Unlock()
 		}()
 	}

@@ -3,6 +3,7 @@ package people
 import (
 	"context"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -70,16 +71,52 @@ func collectorVersions(names []string) map[string]string {
 	return out
 }
 
+// versionRe принимает строку только если в ней есть похожий на версию токен.
+var versionRe = regexp.MustCompile(`(?i)\bv?\d+\.\d+(\.\d+)?([-.+][0-9A-Za-z.]+)?\b`)
+
+// usageMarkers — вывод справки, а не версии: CLI не понимает --version.
+var usageMarkers = []string{
+	"usage:",
+	"usage :",
+	"positional arguments",
+	"optional arguments",
+	"options:",
+	"unrecognized arguments",
+	"unknown option",
+	"invalid option",
+	"no such option",
+	"error:",
+	"traceback (most recent call last)",
+}
+
+func isVersionLine(line string) bool {
+	lower := strings.ToLower(line)
+	for _, marker := range usageMarkers {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	return versionRe.MatchString(line)
+}
+
+// binaryVersion возвращает версию CLI только при валидном ответе.
+// Usage/help/ошибка не должны попадать в versions[].
 func binaryVersion(path string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, path, "--version").CombinedOutput()
 	if err != nil && len(out) == 0 {
 		return ""
 	}
-	line := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
-	if len(line) > 200 {
-		line = line[:200]
+	for _, raw := range strings.Split(string(out), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || !isVersionLine(line) {
+			continue
+		}
+		if len(line) > 200 {
+			line = line[:200]
+		}
+		return line
 	}
-	return line
+	return ""
 }

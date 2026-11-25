@@ -67,6 +67,7 @@ type Account struct {
 	VerificationSource string            `json:"verification_source,omitempty"`
 	Existence          ExistenceState    `json:"existence"`
 	URLValid           bool              `json:"url_valid"`
+	URLKind            URLKind           `json:"url_kind,omitempty"`
 	URLReachable       bool              `json:"url_reachable"`
 	HTTPAttempted      bool              `json:"http_attempted,omitempty"`
 	HTTPStatus         int               `json:"http_status,omitempty"`
@@ -84,6 +85,8 @@ type Account struct {
 	Sensitive bool `json:"sensitive,omitempty"`
 	// VariantOf — исходный ник, если аккаунт найден через variant expansion.
 	VariantOf string `json:"variant_of,omitempty"`
+	// ProviderName — конкретный хостинг для personal_site (notion.site и т.п.).
+	ProviderName string `json:"provider_name,omitempty"`
 	// Архив и хэш аватара — пивоты для корреляции и доказательства.
 	ArchivedURL string `json:"archived_url,omitempty"`
 	ArchivedAt  string `json:"archived_at,omitempty"`
@@ -497,19 +500,42 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 			continue
 		}
 
-		platform := canonicalPlatform(str(payload["platform"]))
+		rawPlatform := strings.ToLower(strings.TrimSpace(str(payload["platform"])))
+		platform := canonicalPlatform(rawPlatform)
 		handle := normalizeHandle(str(payload["handle"]))
 		if platform == "" || handle == "" {
 			continue
 		}
 		link := str(payload["url"])
+		// Архив — это mention, а не профиль. В аккаунты не попадает.
+		if classifyURLKind(link) == URLKindArchive || strings.Contains(rawPlatform, "archive") {
+			continue
+		}
 		// Отсекаем search-URL, корневые страницы, сторонние трекеры и ссылки
 		// без самого handle — это основной источник «мусорных» совпадений.
 		provider := kind == "provider"
+		providerName := str(payload["provider_name"])
 		if !provider && !isValidProfileURL(platform, handle, link) {
 			continue
 		}
 		platform = canonicalPlatformForURL(link, platform)
+
+		// Utility-сервисы не являются отдельными соцсетями:
+		// mcuuid/playerdb — provider-доказательство Minecraft,
+		// gdbrowser — provider Geometry Dash.
+		host := hostOfURL(link)
+		switch {
+		case rawPlatform == "mcuuid" || rawPlatform == "playerdb" || host == "mcuuid.net" || host == "playerdb.co":
+			platform = "minecraft"
+			if providerName == "" {
+				providerName = firstNonEmptyString(rawPlatform, host)
+			}
+		case rawPlatform == "gdbrowser" || host == "gdbrowser.com":
+			platform = "geometrydash"
+			if providerName == "" {
+				providerName = "gdbrowser"
+			}
+		}
 
 		// "verified" из коллектора — это лишь evidence, а не доказательство
 		// существования: такие аккаунты всё равно проходят HTTP-проверку.
@@ -536,8 +562,10 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 				VerificationSource: verificationSource(verification, obs.Source),
 				Existence:          existence,
 				Provider:           provider,
+				ProviderName:       providerName,
 				Sensitive:          isSensitivePlatform(platform),
 				URLValid:           true,
+				URLKind:            classifyURLKind(link),
 			}
 			if link != "" {
 				acc.EvidenceURLs = []string{link}
@@ -552,6 +580,9 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		}
 		acc.Sensitive = acc.Sensitive || isSensitivePlatform(platform)
 		acc.Provider = acc.Provider || provider
+		if providerName != "" && (acc.ProviderName == "" || providerName < acc.ProviderName) {
+			acc.ProviderName = providerName
+		}
 		if provider {
 			acc.Existence = ExistenceConfirmed
 		}
@@ -587,15 +618,25 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 		if acc.Name == "" || betterName(acc.Name, cleanText(str(payload["name"]))) {
 			acc.Name = cleanText(str(payload["name"]))
 		}
-		if bio := cleanText(str(payload["bio"])); len(bio) > len(acc.Bio) {
+		// Платформенные клише ("best place for...") не описывают человека
+		// и не должны участвовать в matching/Actor.
+		if bio := cleanText(str(payload["bio"])); len(bio) > len(acc.Bio) && !isGenericBio(bio) {
 			acc.Bio = bio
 		}
 		if avatar := str(payload["avatar"]); avatar != "" && (acc.Avatar == "" || provider || collectorVerified) {
 			acc.Avatar = avatar
 		}
 		if links, ok := payload["links"].([]any); ok {
+			raw := make([]string, 0, len(links))
 			for _, link := range links {
-				if s := str(link); s != "" && !contains(acc.Links, s) {
+				if s := str(link); s != "" {
+					raw = append(raw, s)
+				}
+			}
+			// Персональные ссылки: без CDN/навигации/своего домена,
+			// дедуп и максимум пять — иначе shared_link ложно срабатывает.
+			for _, s := range filteredPersonalLinks(append(acc.Links, raw...), acc.Platform) {
+				if !contains(acc.Links, s) {
 					acc.Links = append(acc.Links, s)
 				}
 			}
@@ -605,6 +646,15 @@ func Normalize(observations []scanner.Observation) ([]Account, []Breach, *PhoneI
 	accounts := make([]Account, 0, len(byKey))
 	for _, acc := range byKey {
 		sort.Strings(acc.Sources)
+		// Minecraft: canonical — профильная страница, API/utility остаются evidence.
+		if acc.Platform == "minecraft" {
+			canonical := "https://namemc.com/profile/" + url.PathEscape(acc.Handle)
+			if !contains(acc.EvidenceURLs, canonical) {
+				acc.EvidenceURLs = append(acc.EvidenceURLs, canonical)
+			}
+			acc.URL = canonical
+		}
+		acc.URLKind = classifyURLKind(acc.URL)
 		sort.Slice(acc.EvidenceURLs, func(i, j int) bool {
 			ri, rj := canonicalURLRank(acc.EvidenceURLs[i], acc.Handle), canonicalURLRank(acc.EvidenceURLs[j], acc.Handle)
 			if ri != rj {
@@ -840,8 +890,10 @@ func BuildActor(target string, accounts []Account) *Actor {
 	ids := make([]string, 0, len(confirmed))
 	for _, acc := range confirmed {
 		ids = append(ids, acc.ID)
-		if acc.Name != "" && (!named || len(acc.Name) > len(label)) {
-			label = acc.Name
+		// Имя берём, только если оно похоже на человеческое: 2–4 токена,
+		// не равно платформе и не является generic-фразой.
+		if !named && plausibleActorName(acc.Name, acc.Platform, acc.Handle) {
+			label = strings.TrimSpace(acc.Name)
 			named = true
 		}
 	}
@@ -904,22 +956,28 @@ func actorSignals(accounts []Account, target string) []string {
 
 	for _, acc := range accounts {
 		name := normalizeSignalName(acc.Name)
-		if name != "" && name != normalizeSignalName(acc.Handle) {
+		if name != "" && name != normalizeSignalName(acc.Handle) && !isGenericPhrase(name) {
 			names[name]++
 		}
 		avatar := ""
 		if acc.AvatarHash != "" {
 			avatar = "hash:" + acc.AvatarHash
-		} else {
+		} else if !isDefaultAvatar(acc.Avatar) {
 			avatar = normalizeSignalAvatar(acc.Avatar)
 		}
 		if avatar != "" {
 			avatars[avatar]++
 		}
-		for _, link := range acc.Links {
+		// Ссылка должна встречаться у ≥2 РАЗНЫХ аккаунтов. Дубль внутри
+		// одного профиля не является доказательством связи.
+		perAccount := map[string]struct{}{}
+		for _, link := range filteredPersonalLinks(acc.Links, acc.Platform) {
 			if key := normalizeSignalLink(link); key != "" {
-				links[key]++
+				perAccount[key] = struct{}{}
 			}
+		}
+		for key := range perAccount {
+			links[key]++
 		}
 	}
 	addRepeated := func(signal string, values map[string]int) {

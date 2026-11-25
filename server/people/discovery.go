@@ -29,16 +29,28 @@ func ExtractMentions(observations []scanner.Observation) []Mention {
 	var out []Mention
 	for _, obs := range observations {
 		var payload struct {
-			Kind    string `json:"kind"`
-			Source  string `json:"mention_source"`
-			URL     string `json:"url"`
-			Title   string `json:"title"`
-			Context string `json:"context"`
+			Kind     string `json:"kind"`
+			Source   string `json:"mention_source"`
+			URL      string `json:"url"`
+			Title    string `json:"title"`
+			Context  string `json:"context"`
+			Platform string `json:"platform"`
 		}
-		if json.Unmarshal(obs.Payload, &payload) != nil || payload.Kind != "mention" || payload.URL == "" {
+		if json.Unmarshal(obs.Payload, &payload) != nil || payload.URL == "" {
+			continue
+		}
+		isArchive := classifyURLKind(payload.URL) == URLKindArchive ||
+			strings.Contains(strings.ToLower(payload.Platform), "archive")
+		if payload.Kind != "mention" && !isArchive {
 			continue
 		}
 		source := payload.Source
+		if isArchive {
+			source = "archive"
+			if payload.Title == "" {
+				payload.Title = payload.Platform
+			}
+		}
 		if source == "" {
 			source = obs.Source
 		}

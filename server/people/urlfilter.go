@@ -51,14 +51,18 @@ func isValidProfileURL(platform, handle, link string) bool {
 		strings.Contains(path, "/lookup") || strings.Contains(path, "/catalog") {
 		return false
 	}
+	_, utilityLookup := utilityHosts[host]
 	for key := range u.Query() {
-		if _, bad := searchQueryKeys[strings.ToLower(key)]; bad {
+		if _, bad := searchQueryKeys[strings.ToLower(key)]; bad && !utilityLookup {
 			return false
 		}
 	}
 
-	// Профиль на поддомене: https://<handle>.rajce.idnes.cz/
+	// Профиль на поддомене или lookup-сервис с handle в query.
 	if path == "" {
+		if strings.Contains(strings.ToLower(u.RawQuery), h) {
+			return true
+		}
 		return strings.Contains(host, h)
 	}
 	// Основное правило: handle присутствует в пути профиля.
@@ -117,6 +121,50 @@ func canonicalPlatformForURL(link, fallback string) string {
 	}
 }
 
+// URLKind — семантика ссылки. API/archive/utility не доказывают профиль
+// только фактом HTTP 200.
+type URLKind string
+
+const (
+	URLKindProfile URLKind = "profile"
+	URLKindAPI     URLKind = "api"
+	URLKindArchive URLKind = "archive"
+	URLKindUtility URLKind = "utility"
+)
+
+var archiveHosts = map[string]struct{}{
+	"web.archive.org":                {},
+	"archive.org":                    {},
+	"archive.ph":                     {},
+	"archive.is":                     {},
+	"cachedview.nl":                  {},
+	"webcache.googleusercontent.com": {},
+}
+
+var utilityHosts = map[string]struct{}{
+	"mcuuid.net":    {},
+	"playerdb.co":   {},
+	"gdbrowser.com": {},
+}
+
+func classifyURLKind(link string) URLKind {
+	u, err := url.Parse(link)
+	if err != nil || u.Hostname() == "" {
+		return URLKindProfile
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	if _, ok := archiveHosts[host]; ok || strings.Contains(host, "archive") {
+		return URLKindArchive
+	}
+	if _, ok := utilityHosts[host]; ok {
+		return URLKindUtility
+	}
+	if isAPIURL(link) {
+		return URLKindAPI
+	}
+	return URLKindProfile
+}
+
 // isAPIURL определяет служебные/API-ссылки, которые годятся как evidence,
 // но не должны становиться canonical-профилем (api.chess.com/pub/player/...).
 func isAPIURL(link string) bool {
@@ -147,7 +195,10 @@ func canonicalURLRank(link, handle string) int {
 	if link == "" || isRootOrLoginURL(link) {
 		return 0
 	}
-	if isAPIURL(link) {
+	switch classifyURLKind(link) {
+	case URLKindArchive, URLKindUtility:
+		return 0
+	case URLKindAPI:
 		return 1
 	}
 	u, err := url.Parse(link)

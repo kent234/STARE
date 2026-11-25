@@ -115,15 +115,6 @@ func VerifyAccountURLs(ctx context.Context, accounts []Account) ([]Account, []Re
 			switch {
 			case f.Status == http.StatusNotFound || f.Status == http.StatusGone:
 				acc.Existence = ExistenceAbsent
-				mu.Lock()
-				removed = append(removed, RemovedAccount{
-					ID:       acc.ID,
-					Platform: acc.Platform,
-					Handle:   acc.Handle,
-					URL:      acc.URL,
-					Status:   f.Status,
-				})
-				mu.Unlock()
 			case f.Status == http.StatusUnauthorized || f.Status == http.StatusForbidden ||
 				f.Status == http.StatusTooManyRequests || f.Status == http.StatusUnavailableForLegalReasons:
 				acc.Existence = ExistenceBlocked
@@ -133,6 +124,18 @@ func VerifyAccountURLs(ctx context.Context, accounts []Account) ([]Account, []Re
 				acc.Existence = evaluateProfilePage(acc, f)
 			default:
 				acc.Existence = ExistenceUnknown
+			}
+			if acc.Existence == ExistenceAbsent {
+				// 200 + strong negative — тоже негативный факт, не только 404/410.
+				mu.Lock()
+				removed = append(removed, RemovedAccount{
+					ID:       acc.ID,
+					Platform: acc.Platform,
+					Handle:   acc.Handle,
+					URL:      acc.URL,
+					Status:   f.Status,
+				})
+				mu.Unlock()
 			}
 			applyExistence(acc)
 		}()
@@ -204,28 +207,41 @@ func evaluateProfilePage(acc *Account, f profileFetch) ExistenceState {
 	if isLoginWall(f.FinalURL, title+" "+ogTitle) {
 		return ExistenceBlocked
 	}
-	if hasAny(lowerBody, strongAbsenceMarkers) {
-		// HTTP 200 с текстом «not found» — это soft-404, а не подтверждение.
+	// Login-wall может быть в теле при нормальном title (Pinterest, Reddit и т.п.).
+	if hasAny(lowerBody, loginWallBodyMarkers) {
+		return ExistenceBlocked
+	}
+
+	// 1. Positive marker сильнее любого negative: страница с реальным
+	// профильным маркером не должна теряться из-за слова "not found" в футере.
+	if hasPositiveProfileMarker(acc, f, lowerBody) {
+		return ExistenceConfirmed
+	}
+
+	// 2. Сильный negative без positive — это absent, а не unknown.
+	if hasStrongNegative(acc, lowerBody, title+" "+ogTitle) {
+		return ExistenceAbsent
+	}
+	// 3. Слабый site-specific negative оставляет неопределённость.
+	if acc.PageNegative != "" && !isGenericNegativeMarker(acc.PageNegative) &&
+		strings.Contains(lowerBody, strings.ToLower(acc.PageNegative)) {
 		return ExistenceUnknown
 	}
-	if acc.PageNegative != "" && strings.Contains(lowerBody, strings.ToLower(acc.PageNegative)) {
-		return ExistenceUnknown
-	}
-	if acc.PageMarker != "" {
-		if strings.Contains(body, acc.PageMarker) {
-			return ExistenceConfirmed
-		}
-		return ExistenceUnknown
-	}
+
 	handle := strings.ToLower(acc.Handle)
 	if handle == "" {
 		return ExistenceUnknown
 	}
-	if strings.Contains(title, handle) || strings.Contains(ogTitle, handle) {
-		return ExistenceConfirmed
-	}
 	// JSON API-ответ — надёжнее HTML-эвристики.
 	if strings.Contains(strings.ToLower(f.ContentType), "json") && strings.Contains(lowerBody, handle) {
+		return ExistenceConfirmed
+	}
+	// API/utility не подтверждаются только HTTP 200 + title/handle:
+	// нужна JSON-семантика или положительный маркер (проверены выше).
+	if acc.URLKind == URLKindAPI || acc.URLKind == URLKindUtility {
+		return ExistenceUnknown
+	}
+	if strings.Contains(title, handle) || strings.Contains(ogTitle, handle) {
 		return ExistenceConfirmed
 	}
 	// Тело без профильной разметки и без handle в заголовке легко даёт
@@ -234,6 +250,71 @@ func evaluateProfilePage(acc *Account, f profileFetch) ExistenceState {
 		return ExistenceConfirmed
 	}
 	return ExistenceUnknown
+}
+
+func hasPositiveProfileMarker(acc *Account, f profileFetch, lowerBody string) bool {
+	if acc.PageMarker != "" && strings.Contains(f.Body, acc.PageMarker) {
+		return true
+	}
+	// Chess.com API отдаёт стабильный player_id; generic code:0 его не отменяет.
+	if acc.Platform == "chess.com" && strings.Contains(lowerBody, `"player_id"`) {
+		return true
+	}
+	return false
+}
+
+func hasStrongNegative(acc *Account, lowerBody, lowerTitle string) bool {
+	if hasAny(lowerBody, strongAbsenceMarkers) {
+		return true
+	}
+	// Duolingo и подобные API: users: [] — отсутствие, а не неизвестность.
+	if emptyUsersRe.MatchString(lowerBody) {
+		return true
+	}
+	if hasAny(lowerTitle, strongAbsenceMarkers) ||
+		hasAny(lowerTitle, titleAbsenceMarkers) {
+		return true
+	}
+	negative := strings.TrimSpace(acc.PageNegative)
+	if negative != "" && !isGenericNegativeMarker(negative) &&
+		strings.Contains(lowerBody, strings.ToLower(negative)) &&
+		isStrongNegativeText(negative) {
+		return true
+	}
+	return false
+}
+
+// isGenericNegativeMarker отсеивает служебные JSON-флаги, которые не являются
+// признаком отсутствия профиля.
+func isGenericNegativeMarker(value string) bool {
+	compact := strings.ToLower(value)
+	compact = strings.NewReplacer(" ", "", "\"", "", "'", "").Replace(compact)
+	switch compact {
+	case "code:0", "error:0", "status:ok", "success:true":
+		return true
+	default:
+		return false
+	}
+}
+
+func isStrongNegativeText(value string) bool {
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"not found", "doesn't exist", "does not exist", "not available", "suspended", "no such"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+var emptyUsersRe = regexp.MustCompile(`(?i)"users"\s*:\s*\[\s*\]`)
+
+var titleAbsenceMarkers = []string{
+	"not found",
+	"404",
+	"not available",
+	"doesn't exist",
+	"does not exist",
 }
 
 var (
@@ -272,6 +353,15 @@ var strongAbsenceMarkers = []string{
 	"no longer available",
 	"account suspended",
 	"this account doesn't exist",
+}
+
+var loginWallBodyMarkers = []string{
+	"log in to continue",
+	"sign in to continue",
+	"login to view",
+	"log in to view",
+	"sign in to view",
+	"authorization required",
 }
 
 var loginWallMarkers = []string{

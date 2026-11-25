@@ -71,7 +71,9 @@ func EnrichProfiles(ctx context.Context, accounts []Account, limit int) ([]Accou
 				acc.Name = cleanMetaTitle(meta.Title, acc.Handle)
 			}
 			if acc.Bio == "" {
-				acc.Bio = cleanText(meta.Description)
+				if bio := cleanText(meta.Description); !isGenericBio(bio) {
+					acc.Bio = bio
+				}
 			}
 			if acc.Avatar == "" {
 				acc.Avatar = meta.Avatar
@@ -93,14 +95,73 @@ func EnrichProfiles(ctx context.Context, accounts []Account, limit int) ([]Accou
 	return accounts, enriched, time.Since(started)
 }
 
+// metaTitleSuffixes — платформенные хвосты OG/title. Их нельзя показывать
+// как имя человека: "Alice - Wattpad", "Stare - Profile | OpenSea".
+var metaTitleSuffixes = []string{
+	" - Wattpad",
+	" - Profile | OpenSea",
+	" | OpenSea",
+	" - SoundCloud",
+	" | SoundCloud",
+	" - Last.fm",
+	" | Last.fm",
+	" - Behance",
+	" | Behance",
+	" - Dribbble",
+	" | Dribbble",
+	" on Wattpad",
+	"'s Profile",
+	" · GitHub",
+	" | GitHub",
+	" (@",
+	" | Facebook",
+	" • Instagram photos and videos",
+}
+
 func cleanMetaTitle(title, handle string) string {
 	value := cleanText(title)
 	// OG-заголовки часто имеют вид "Name · Platform".
 	if i := strings.Index(value, " · "); i > 0 {
 		value = strings.TrimSpace(value[:i])
 	}
-	if strings.EqualFold(value, handle) {
+	for _, suffix := range metaTitleSuffixes {
+		if strings.HasSuffix(value, suffix) {
+			value = strings.TrimSpace(strings.TrimSuffix(value, suffix))
+		}
+	}
+	// Разные разделители и платформенный хвост: "Alice — Last.fm".
+	for _, separator := range []string{" — ", " – ", " - ", " | "} {
+		if i := strings.LastIndex(value, separator); i > 0 && i < len(value)-len(separator)-1 {
+			tail := strings.TrimSpace(value[i+len(separator):])
+			if isPlatformTail(tail) {
+				value = strings.TrimSpace(value[:i])
+			}
+		}
+	}
+	if i := strings.Index(value, " (@"); i > 0 {
+		value = strings.TrimSpace(value[:i])
+	}
+	// "yamickuru's Profile" — это не имя, а заголовок страницы.
+	if strings.EqualFold(value, handle) || strings.EqualFold(value, handle+"'s Profile") {
 		return ""
 	}
 	return value
+}
+
+// isPlatformTail — хвост заголовка, который является платформой, а не частью имени.
+func isPlatformTail(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return false
+	}
+	for _, brand := range []string{
+		"wattpad", "opensea", "soundcloud", "last.fm", "behance",
+		"dribbble", "github", "gitlab", "facebook", "instagram", "profile",
+		"overview", "home", "official", "twitter", "youtube", "tiktok",
+	} {
+		if lower == brand || strings.HasPrefix(lower, brand) {
+			return true
+		}
+	}
+	return false
 }

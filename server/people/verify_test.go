@@ -51,8 +51,18 @@ func TestVerifyAccountURLs(t *testing.T) {
 	if _, ok := byPlatform["missing"]; ok {
 		t.Fatal("404 account must be removed from results")
 	}
-	if len(removed) != 1 || removed[0].Platform != "missing" || removed[0].Status != http.StatusNotFound {
+	if len(removed) != 2 {
 		t.Fatalf("removed = %+v", removed)
+	}
+	removedByPlatform := map[string]RemovedAccount{}
+	for _, item := range removed {
+		removedByPlatform[item.Platform] = item
+	}
+	if removedByPlatform["missing"].Status != http.StatusNotFound {
+		t.Fatalf("missing removed = %+v", removedByPlatform["missing"])
+	}
+	if _, ok := removedByPlatform["soft"]; !ok {
+		t.Fatalf("strong-negative soft-404 must be removed: %+v", removed)
 	}
 
 	ok := byPlatform["ok"]
@@ -68,7 +78,7 @@ func TestVerifyAccountURLs(t *testing.T) {
 		t.Fatalf("page marker account = %+v", marker)
 	}
 
-	for _, platform := range []string{"soft", "login", "blocked", "error"} {
+	for _, platform := range []string{"login", "blocked", "error"} {
 		acc := byPlatform[platform]
 		if acc.Verified {
 			t.Fatalf("%s must not be verified: %+v", platform, acc)
@@ -76,9 +86,6 @@ func TestVerifyAccountURLs(t *testing.T) {
 		if acc.Confidence != "low" {
 			t.Fatalf("%s confidence = %q, want low", platform, acc.Confidence)
 		}
-	}
-	if byPlatform["soft"].Existence != ExistenceUnknown {
-		t.Fatalf("soft-404 existence = %q", byPlatform["soft"].Existence)
 	}
 	if byPlatform["blocked"].Existence != ExistenceBlocked {
 		t.Fatalf("403 existence = %q", byPlatform["blocked"].Existence)
@@ -131,7 +138,7 @@ func TestEvaluateProfilePage(t *testing.T) {
 		{
 			name:  "soft 404 body",
 			fetch: profileFetch{Status: 200, Body: `<title>Profile</title>user not found`},
-			want:  ExistenceUnknown,
+			want:  ExistenceAbsent,
 		},
 		{
 			name:    "site negative marker",
